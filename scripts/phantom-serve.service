@@ -1,0 +1,30 @@
+[Unit]
+Description=Phantom Documentation Asset Generator
+Documentation=https://github.com/your-org/phantom
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=phantom
+Group=phantom
+EnvironmentFile=/etc/phantom/phantom-serve.env
+ExecStart=/usr/local/bin/phantom serve --port 9443
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/tmp/phantom /home/phantom/.phantom
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=phantom
+
+[Install]
+WantedBy=multi-user.target
