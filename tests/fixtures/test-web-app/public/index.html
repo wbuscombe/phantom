@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        @media (prefers-color-scheme: light) {
+            body { background: #f5f5f5; color: #333; }
+            .card { background: #fff; border-color: #ddd; }
+            header { background: #fff; border-color: #ddd; }
+        }
+        header {
+            background: #16213e;
+            padding: 16px 24px;
+            border-bottom: 1px solid #0f3460;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        header h1 { font-size: 20px; font-weight: 600; }
+        .search-box {
+            margin-left: auto;
+            padding: 8px 16px;
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            color: #e0e0e0;
+            width: 240px;
+        }
+        main { padding: 24px; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        .card, .device-card {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            padding: 20px;
+            cursor: pointer;
+            transition: none;
+        }
+        .card:hover, .device-card:hover {
+            border-color: #e94560;
+        }
+        .card h3, .device-card h3 { font-size: 16px; margin-bottom: 8px; }
+        .card p, .device-card p { font-size: 14px; color: #888; }
+        .status {
+            display: inline-block;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #4ecca3;
+            margin-right: 8px;
+        }
+        .status.offline { background: #e94560; }
+        .detail-panel {
+            display: none;
+            margin-top: 24px;
+            padding: 24px;
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+        }
+        .detail-panel.visible { display: block; }
+        .casting-indicator { display: none; }
+        .casting-indicator.active {
+            display: inline-block;
+            color: #4ecca3;
+            font-weight: bold;
+        }
+        #scrollable-section {
+            margin-top: 600px;
+            padding: 24px;
+            background: #16213e;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Test Dashboard</h1>
+        <input type="text" class="search-box" id="search-input" placeholder="Search...">
+    </header>
+    <main>
+        <div class="grid">
+            <div class="card device-card" data-device="living-room" onclick="showDetail(this)">
+                <h3><span class="status"></span>Living Room</h3>
+                <p>Apple TV 4K — Connected</p>
+                <span class="casting-indicator" id="cast-living-room">Casting</span>
+            </div>
+            <div class="card device-card" data-device="office" onclick="showDetail(this)">
+                <h3><span class="status"></span>Office</h3>
+                <p>Apple TV 4K — Connected</p>
+            </div>
+            <div class="card device-card" data-device="bedroom" onclick="showDetail(this)">
+                <h3><span class="status offline"></span>Bedroom</h3>
+                <p>Apple TV HD — Offline</p>
+            </div>
+        </div>
+        <div class="detail-panel" id="detail-panel">
+            <h2>Device Details</h2>
+            <p id="detail-name">Select a device to view details.</p>
+            <button id="start-cast" onclick="startCast()">Start Cast</button>
+        </div>
+        <div id="scrollable-section">
+            <h2>Scrollable Section</h2>
+            <p>This section is far down the page for scroll testing.</p>
+        </div>
+    </main>
+    <script>
+        function showDetail(el) {
+            const panel = document.getElementById('detail-panel');
+            panel.classList.add('visible');
+            document.getElementById('detail-name').textContent =
+                'Details for: ' + el.querySelector('h3').textContent.trim();
+        }
+        function startCast() {
+            const indicator = document.getElementById('cast-living-room');
+            if (indicator) indicator.classList.add('active');
+        }
+    </script>
+</body>
+</html>

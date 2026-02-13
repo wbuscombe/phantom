@@ -1,0 +1,19 @@
+phantom: "1"
+project: "bad-actions"
+name: "Bad Actions"
+
+setup:
+  type: web
+  run:
+    command: "npm run dev"
+    ready_check:
+      type: http
+      url: "http://localhost:3000"
+      timeout: 10
+
+captures:
+  - id: home
+    name: "Home"
+    output: "docs/screenshots/home.png"
+    actions:
+      - { type: click }

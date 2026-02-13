@@ -1,0 +1,21 @@
+phantom: "1"
+project: "dupe-app"
+name: "Dupe App"
+
+setup:
+  type: web
+  run:
+    command: "npm run dev"
+    ready_check:
+      type: http
+      url: "http://localhost:3000"
+      timeout: 10
+
+captures:
+  - id: dashboard
+    name: "Dashboard"
+    output: "docs/screenshots/dashboard.png"
+
+  - id: dashboard
+    name: "Dashboard Again"
+    output: "docs/screenshots/dashboard-2.png"

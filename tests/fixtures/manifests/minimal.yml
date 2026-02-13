@@ -1,0 +1,17 @@
+phantom: "1"
+project: "minimal-app"
+name: "Minimal"
+
+setup:
+  type: web
+  run:
+    command: "python -m http.server 8080"
+    ready_check:
+      type: http
+      url: "http://localhost:8080"
+      timeout: 10
+
+captures:
+  - id: home
+    name: "Home Page"
+    output: "docs/screenshots/home.png"

@@ -1,0 +1,43 @@
+phantom: "1"
+project: "tui-app"
+name: "TUI Application"
+
+setup:
+  type: tui
+  requires:
+    - cargo
+    - rustc >= 1.75
+  build:
+    - cargo build --release
+  run:
+    command: "./target/release/myapp --demo-mode"
+    ready_check:
+      type: stdout_match
+      pattern: "Ready"
+      timeout: 15
+
+tui:
+  terminal:
+    width: 120
+    height: 40
+  renderer: silicon
+  renderer_config:
+    font: "JetBrains Mono"
+    font_size: 14
+    theme: "Catppuccin Mocha"
+
+captures:
+  - id: main-view
+    name: "Main View"
+    output: "docs/screenshots/main.png"
+    actions:
+      - { type: keystroke, key: "i" }
+      - { type: wait, ms: 1000 }
+
+  - id: search
+    name: "Search"
+    output: "docs/screenshots/search.png"
+    actions:
+      - { type: keystroke, key: "/" }
+      - { type: type_text, text: "query", delay: 80 }
+      - { type: wait, ms: 500 }

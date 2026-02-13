@@ -1,0 +1,137 @@
+phantom: "1"
+project: "test-app"
+name: "Test Application"
+description: "A test web application for Phantom integration tests."
+
+setup:
+  type: web
+  requires:
+    - node >= 18
+    - npm
+  build:
+    - npm ci
+    - npm run build
+  run:
+    command: "npm run dev"
+    env:
+      NODE_ENV: "demo"
+      PORT: "3456"
+      PHANTOM_MODE: "1"
+    ready_check:
+      type: http
+      url: "http://localhost:3456"
+      timeout: 30
+      interval: 1
+  teardown:
+    - "kill %1 || true"
+
+fixtures:
+  - name: "Seed demo data"
+    type: script
+    run: "node scripts/seed.js"
+    timeout: 10
+
+  - name: "Add test item"
+    type: http
+    method: POST
+    url: "http://localhost:3456/api/seed"
+    headers:
+      Content-Type: "application/json"
+    body: '{"name": "Test Item"}'
+    expected_status: 201
+
+  - name: "Copy test assets"
+    type: file_copy
+    source: "test-fixtures/logo.png"
+    destination: "public/assets/"
+
+capture_defaults:
+  viewport: { width: 1280, height: 800 }
+  theme: dark
+  device_scale: 2
+  wait_after_actions: 500
+  timeout: 15
+  retry:
+    max_attempts: 3
+    backoff_ms: 1000
+
+captures:
+  - id: dashboard
+    name: "Dashboard"
+    description: "Main dashboard showing overview."
+    route: "/dashboard"
+    wait_for: ".card"
+    wait_for_state: visible
+    output: "docs/screenshots/dashboard.png"
+    readme_target: "README.md"
+    alt_text: "Dashboard showing connected devices"
+    viewport: { width: 1440, height: 900 }
+
+  - id: detail-view
+    name: "Detail View"
+    route: "/dashboard"
+    output: "docs/screenshots/detail.png"
+    depends_on: dashboard
+    actions:
+      - { type: click, selector: ".card:first-child" }
+      - { type: wait_for, selector: ".detail-panel", timeout: 5 }
+      - { type: wait, ms: 500 }
+
+  - id: settings
+    name: "Settings Panel"
+    route: "/settings"
+    output: "docs/screenshots/settings.png"
+    parallel: true
+    actions:
+      - { type: scroll_to, selector: "#advanced-settings" }
+
+  - id: mobile-view
+    name: "Mobile View"
+    route: "/dashboard"
+    viewport: { width: 390, height: 844 }
+    output: "docs/screenshots/mobile.png"
+    parallel: true
+
+  - id: skipped-capture
+    name: "Temporarily Disabled"
+    route: "/"
+    output: "docs/screenshots/skipped.png"
+    skip: true
+
+groups:
+  hero:
+    - dashboard
+    - detail-view
+  mobile:
+    - mobile-view
+
+processing:
+  format: png
+  optimize: true
+  max_width: 2800
+  border:
+    style: drop-shadow
+    shadow_color: "rgba(0,0,0,0.3)"
+    shadow_offset: { x: 0, y: 8 }
+    shadow_blur: 24
+    padding: 32
+    background: transparent
+    corner_radius: 8
+  diff:
+    enabled: true
+    threshold: 0.95
+    algorithm: ssim
+
+publishing:
+  branch: main
+  commit_author:
+    name: "Phantom Bot"
+    email: "phantom@noreply"
+  ci_skip_tag: "[skip ci]"
+  commit_message: "docs(screenshots): update via Phantom"
+  strategy: direct
+  readme_update: true
+  cleanup_stale: true
+
+triggers:
+  - type: release

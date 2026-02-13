@@ -1,0 +1,47 @@
+phantom: "1"
+project: "test-docker-app"
+name: "Test Docker App"
+description: "Integration test fixture for Phantom Docker runner."
+
+setup:
+  type: docker-compose
+  compose_file: docker-compose.yml
+  run:
+    command: "unused"
+    ready_check:
+      type: http
+      url: "http://localhost:9754"
+      timeout: 30
+      interval: 1
+
+capture_defaults:
+  viewport: { width: 1280, height: 800 }
+  theme: dark
+  device_scale: 2
+  timeout: 10
+  retry:
+    max_attempts: 1
+    backoff_ms: 500
+
+captures:
+  - id: homepage
+    name: "Homepage"
+    route: "/"
+    wait_for: "#test-card"
+    output: "docs/screenshots/homepage.png"
+
+  - id: mobile-homepage
+    name: "Mobile Homepage"
+    route: "/"
+    viewport: { width: 390, height: 844 }
+    wait_for: "#test-card"
+    output: "docs/screenshots/mobile-homepage.png"
+
+processing:
+  format: png
+  border:
+    style: none
+
+publishing:
+  branch: main
+  strategy: direct

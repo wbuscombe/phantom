@@ -1,0 +1,17 @@
+# Missing required 'project' field
+phantom: "1"
+name: "Broken App"
+
+setup:
+  type: web
+  run:
+    command: "npm run dev"
+    ready_check:
+      type: http
+      url: "http://localhost:3000"
+      timeout: 10
+
+captures:
+  - id: home
+    name: "Home"
+    output: "docs/screenshots/home.png"
