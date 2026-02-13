@@ -1,0 +1,93 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "phantom-docs"
+version = "0.1.0"
+description = "Automated documentation asset generation for software projects"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [
+    { name = "Will Buscombe" },
+]
+keywords = [
+    "documentation",
+    "screenshots",
+    "automation",
+    "playwright",
+    "ci-cd",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Documentation",
+    "Topic :: Software Development :: Build Tools",
+]
+dependencies = [
+    "click>=8.1",
+    "rich>=13.0",
+    "pydantic>=2.5",
+    "ruamel.yaml>=0.18",
+    "structlog>=24.1",
+    "Pillow>=10.2",
+    "scikit-image>=0.22",
+    "playwright>=1.41",
+    "gitpython>=3.1",
+    "httpx>=0.26",
+    "pyte>=0.8",
+    "aiohttp>=3.9",
+    "croniter>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.2",
+    "mypy>=1.8",
+    "pytest-cov>=4.1",
+    "build>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/wbuscombe/phantom"
+Repository = "https://github.com/wbuscombe/phantom"
+Documentation = "https://github.com/wbuscombe/phantom#readme"
+Issues = "https://github.com/wbuscombe/phantom/issues"
+
+[project.scripts]
+phantom = "phantom.cli:main"
+
+[project.entry-points."phantom.runners"]
+# External runner plugins register here. Example:
+# my-runner = "my_package.runner:MyRunner"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/phantom"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: integration tests requiring system dependencies",
+    "e2e: end-to-end tests requiring full pipeline",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
