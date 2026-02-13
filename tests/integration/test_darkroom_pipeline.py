@@ -66,7 +66,8 @@ class TestFullPipeline:
         output_img = Image.open(result.output_path)
         assert output_img.width > 1280  # Shadow adds padding
         assert output_img.height > 800
-        assert output_img.mode == "RGBA"  # Shadow requires alpha
+        # pngquant may convert RGBA to palette mode (P) on Linux
+        assert output_img.mode in ("RGBA", "P")
 
     @pytest.mark.integration
     def test_pipeline_no_shadow(self, tmp_path: Path) -> None:
@@ -259,7 +260,8 @@ class TestFullPipeline:
         )
 
         img = Image.open(result.output_path)
-        assert img.mode == "RGBA"
+        # pngquant may convert RGBA to palette mode (P) on Linux
+        img = img.convert("RGBA")
 
         # Corner should be nearly transparent
         corner = img.getpixel((0, 0))
