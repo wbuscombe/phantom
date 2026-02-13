@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+      - name: Ruff lint
+        run: ruff check src/ tests/
+      - name: Ruff format check
+        run: ruff format --check src/ tests/
+      - name: Mypy
+        run: mypy src/phantom/ --ignore-missing-imports
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+      - name: Install Playwright browsers
+        run: playwright install chromium --with-deps
+      - name: Install optimization tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pngquant
+      - name: Unit tests
+        run: pytest tests/unit/ -v --tb=short
+      - name: Integration tests (darkroom + publisher)
+        run: pytest tests/integration/ -v --tb=short --ignore=tests/integration/test_web_runner.py
+      - name: Integration tests (web runner)
+        run: pytest tests/integration/test_web_runner.py -v --tb=short
+      - name: E2E tests
+        run: pytest tests/e2e/ -v --tb=short
+        if: hashFiles('tests/e2e/') != ''
