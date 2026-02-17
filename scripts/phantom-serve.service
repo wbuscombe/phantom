@@ -1,25 +1,33 @@
 [Unit]
-Description=Phantom Documentation Asset Generator
-Documentation=https://github.com/your-org/phantom
-After=network-online.target
+Description=Phantom Documentation Screenshot Service
+Documentation=https://github.com/wbuscombe/phantom
+After=network-online.target phantom-xvfb.service docker.service
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=phantom
 Group=phantom
+
 EnvironmentFile=/etc/phantom/phantom-serve.env
-ExecStart=/usr/local/bin/phantom serve --port 9443
+Environment="PATH=/home/phantom/.local/bin:/home/phantom/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="DISPLAY=:99"
+Environment="HOME=/home/phantom"
+
+ExecStart=/home/phantom/.local/bin/phantom serve --port 9443
+
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=30
 
+WorkingDirectory=/home/phantom
+
 # Security hardening
-NoNewPrivileges=yes
+NoNewPrivileges=true
+PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/tmp/phantom /home/phantom/.phantom
-PrivateTmp=true
+ReadWritePaths=/var/phantom /tmp/phantom/workspace /home/phantom/.phantom /tmp
 
 # Logging
 StandardOutput=journal

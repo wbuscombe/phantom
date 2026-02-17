@@ -1,0 +1,126 @@
+# Phantom Conductor Configuration
+# ================================
+# Copy to /etc/phantom/conductor.yml and customize.
+#
+# This file configures the Phantom conductor — the orchestration layer
+# that manages runner lifecycles, job queuing, and system-level settings.
+#
+# All values shown are defaults. Uncomment and modify as needed.
+
+# ── General ────────────────────────────────────────────
+
+# Working directory for temporary build/capture workspaces.
+# Each job creates a subdirectory here; cleaned by `phantom gc`.
+# workspace_root: /tmp/phantom/workspace
+
+# State directory for persistent data (queue, lock file, run history).
+# state_dir: /var/phantom/state
+
+# Maximum concurrent jobs. Phantom processes jobs sequentially by default
+# to avoid resource contention (Chromium is memory-hungry).
+# max_concurrent_jobs: 1
+
+# ── Runner Defaults ────────────────────────────────────
+
+# Maximum seconds for an entire runner session (build + seed + launch +
+# all captures). The runner is killed if this is exceeded.
+# Override per-project in the manifest: setup.runner_timeout
+# runner_timeout: 300
+
+# Maximum seconds to wait for the dev server ready check to pass.
+# ready_check_timeout: 60
+
+# ── Queue ──────────────────────────────────────────────
+
+# Maximum number of queued jobs. New triggers are rejected when the
+# queue is full.
+# max_queue_depth: 5
+
+# Path to the persistent queue file. Jobs survive conductor restarts.
+# queue_file: /var/phantom/state/queue.json
+
+# ── Network Restrictions ───────────────────────────────
+# Control which hosts can be reached during build and capture phases.
+# These are informational — enforcement requires firewall rules or
+# a network namespace setup.
+
+# network:
+#   # Hosts allowed during build phase (npm install, pip install, etc.)
+#   build_allowlist:
+#     - "registry.npmjs.org"
+#     - "*.npmjs.org"
+#     - "registry.yarnpkg.com"
+#     - "pypi.org"
+#     - "files.pythonhosted.org"
+#     - "crates.io"
+#     - "static.crates.io"
+#     - "github.com"
+#     - "*.githubusercontent.com"
+#
+#   # Additional hosts for your private registries
+#   build_extra_hosts: []
+#
+#   # Hosts allowed during capture phase (should be localhost only)
+#   capture_allowlist:
+#     - "localhost"
+#     - "127.0.0.1"
+#     - "::1"
+
+# ── Logging ────────────────────────────────────────────
+
+# Log level: debug, info, warning, error
+# log_level: info
+
+# Log format: json (structured, for log aggregators) or console (human-readable)
+# log_format: json
+
+# ── Webhook Server ─────────────────────────────────────
+# These settings apply when running `phantom serve`.
+
+# server:
+#   # Port for the webhook listener and health endpoint.
+#   port: 9443
+#
+#   # Bind address. Use 0.0.0.0 to listen on all interfaces,
+#   # or 127.0.0.1 if behind a reverse proxy.
+#   host: "0.0.0.0"
+#
+#   # GitHub webhook branches to respond to.
+#   # Pushes to other branches are ignored.
+#   allowed_branches:
+#     - "main"
+#     - "master"
+
+# ── Cleanup ────────────────────────────────────────────
+# Settings for the `phantom gc` garbage collection command.
+
+# cleanup:
+#   # Remove workspaces older than this many days.
+#   retention_days: 7
+#
+#   # Also clean up old log files.
+#   clean_logs: true
+#   log_retention_days: 30
+
+# ── Display (Headless) ────────────────────────────────
+# Virtual display settings for headless screenshot capture.
+# These are used by the Xvfb service on self-hosted servers.
+
+# display:
+#   # Xvfb display number (matches DISPLAY=:99)
+#   number: 99
+#
+#   # Virtual screen resolution
+#   width: 1920
+#   height: 1080
+#   depth: 24
+
+# ── Security ──────────────────────────────────────────
+
+# security:
+#   # Scan captured screenshots for potential secrets (API keys,
+#   # tokens, connection strings) before publishing.
+#   screenshot_scan: true
+#
+#   # File permissions for sensitive files.
+#   # env_file_mode: "0640"

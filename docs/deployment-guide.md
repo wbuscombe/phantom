@@ -9,10 +9,11 @@ This guide covers every way to run Phantom, from local development to production
 1. [Local Development](#1-local-development)
 2. [CI Integration (GitHub Actions)](#2-ci-integration-github-actions)
 3. [Self-hosted Server](#3-self-hosted-server)
-4. [Docker](#4-docker)
-5. [Environment Variables](#5-environment-variables)
-6. [Webhook Setup](#6-webhook-setup)
-7. [Scheduling](#7-scheduling)
+4. [TrueNAS VM Deployment](#4-truenas-vm-deployment)
+5. [Docker](#5-docker)
+6. [Environment Variables](#6-environment-variables)
+7. [Webhook Setup](#7-webhook-setup)
+8. [Scheduling](#8-scheduling)
 
 ---
 
@@ -337,7 +338,187 @@ curl http://localhost:9443/health
 
 ---
 
-## 4. Docker
+## 4. TrueNAS VM Deployment
+
+This section covers provisioning a dedicated Ubuntu 24.04 VM on TrueNAS for running Phantom as a self-hosted service. This is the recommended production setup for teams that want automatic webhook-driven and scheduled screenshot generation.
+
+### VM Specifications
+
+| Resource | Recommended | Minimum |
+|----------|------------|---------|
+| CPU      | 4 vCPUs    | 2 vCPUs |
+| RAM      | 8 GB       | 4 GB    |
+| Disk     | 80 GB      | 50 GB   |
+| Swap     | 4 GB       | 2 GB    |
+| OS       | Ubuntu 24.04 LTS | Ubuntu 22.04 LTS |
+
+> **Why 80 GB disk?** Rust `target/` directories are 5-15 GB, `node_modules` add up across projects, and Playwright's Chromium binary is ~400 MB. With swap, Chromium and Rust builds can overlap without OOM kills.
+
+### Creating the VM on TrueNAS
+
+1. In the TrueNAS web UI, go to **Virtualization > Virtual Machines > Add**.
+2. Select **Linux** as the guest OS.
+3. Upload or point to an Ubuntu 24.04 Server ISO.
+4. Allocate resources per the table above.
+5. Set the NIC to a bridged network so GitHub webhooks can reach the VM.
+6. Boot and install Ubuntu 24.04 (minimal server, OpenSSH enabled).
+
+### Automated Provisioning
+
+The project includes an idempotent provisioning script that installs all dependencies:
+
+```bash
+# SSH into the VM
+ssh user@phantom-vm
+
+# Clone the repo (or scp the scripts directory)
+git clone https://github.com/wbuscombe/phantom.git
+cd phantom
+
+# Run the provisioning script
+sudo bash scripts/setup-vm.sh
+```
+
+The script handles everything in a single pass:
+
+- **System baseline**: UTC timezone, unattended-upgrades, base packages
+- **Swap**: 4 GB swap file with `vm.swappiness=10`
+- **Phantom user**: Dedicated `phantom` system user
+- **Display server**: Xvfb, Openbox, xdotool, maim, scrot (headless captures)
+- **Image tools**: ImageMagick, pngquant
+- **Python 3.12+**: With pip and pipx
+- **Node.js 22 LTS**: Via NodeSource
+- **Rust stable**: Via rustup, plus silicon and oxipng (cargo)
+- **Docker CE**: For docker-compose runner projects
+- **Phantom**: Installed via `pipx install phantom-docs`
+- **Playwright Chromium**: Headless browser for web captures
+- **Fonts**: JetBrains Mono, Inter, Noto Color Emoji
+- **Directories**: `/var/phantom/`, `/etc/phantom/`, `/home/phantom/projects/`
+- **Firewall**: UFW with SSH + port 9443
+- **systemd**: `phantom.service` and `phantom-xvfb.service` (enabled, not started)
+
+Every step is idempotent — safe to re-run after updates or to recover from partial failures.
+
+### Post-Provisioning Configuration
+
+**1. Edit the environment file:**
+
+```bash
+sudo nano /etc/phantom/phantom-serve.env
+```
+
+Set your webhook secret and manifest mappings:
+
+```bash
+PHANTOM_WEBHOOK_SECRET=<output of: openssl rand -hex 32>
+PHANTOM_MANIFEST_MAP=my-app=/home/phantom/projects/my-app/.phantom.yml
+```
+
+**2. Clone or copy your project manifests:**
+
+```bash
+sudo -u phantom git clone https://github.com/yourorg/my-app.git /home/phantom/projects/my-app
+```
+
+**3. Start the services:**
+
+```bash
+sudo systemctl start phantom-xvfb
+sudo systemctl start phantom
+```
+
+**4. Verify:**
+
+```bash
+# Run the verification script
+sudo bash scripts/verify-vm.sh
+
+# Check the health endpoint
+curl http://localhost:9443/health
+# {"status": "ok", "queue_size": 0}
+
+# Follow the logs
+sudo journalctl -u phantom -f
+```
+
+### Conductor Configuration
+
+For advanced tuning, create `/etc/phantom/conductor.yml`:
+
+```bash
+sudo cp scripts/conductor.yml.example /etc/phantom/conductor.yml
+sudo nano /etc/phantom/conductor.yml
+```
+
+See `scripts/conductor.yml.example` for all available settings (runner timeouts, queue depth, network restrictions, display settings).
+
+### Networking and Webhooks
+
+The VM needs to be reachable from GitHub for webhook delivery. Common approaches:
+
+**Option A: Direct (if VM has a public IP or port forward):**
+
+Configure the GitHub webhook payload URL as `http://<vm-ip>:9443/webhook/github`. Not recommended for production — use HTTPS.
+
+**Option B: Reverse proxy on TrueNAS host or another machine:**
+
+Set up nginx or Caddy to terminate TLS and proxy to the VM:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name phantom.example.com;
+
+    ssl_certificate     /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    location / {
+        proxy_pass http://<vm-internal-ip>:9443;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+**Option C: Cloudflare Tunnel or similar:**
+
+For environments without public IPs, use a Cloudflare Tunnel, ngrok, or Tailscale Funnel to expose port 9443.
+
+### Maintenance
+
+```bash
+# Update Phantom
+sudo -u phantom bash -c 'export PATH="$HOME/.local/bin:$PATH" && pipx upgrade phantom-docs'
+
+# Update Playwright browser
+sudo -u phantom bash -c 'export PATH="$HOME/.local/bin:$PATH" && playwright install chromium'
+
+# Clean up old workspaces (keeps last 7 days by default)
+sudo -u phantom bash -c 'export PATH="$HOME/.local/bin:$PATH" && phantom gc'
+
+# Re-run verification after updates
+sudo bash scripts/verify-vm.sh
+
+# View recent run history
+sudo -u phantom bash -c 'export PATH="$HOME/.local/bin:$PATH" && phantom status'
+```
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Blank screenshots | Xvfb not running | `sudo systemctl start phantom-xvfb` |
+| `DISPLAY not set` | Environment missing | Check `DISPLAY=:99` in service file |
+| Font rendering issues | Missing fonts | Re-run `setup-vm.sh` or install fonts manually |
+| OOM kills during build | Insufficient swap | Verify swap with `free -h`, increase if needed |
+| Webhook 401 errors | Secret mismatch | Compare `PHANTOM_WEBHOOK_SECRET` with GitHub config |
+| Permission denied on `/var/phantom` | Ownership | `sudo chown -R phantom:phantom /var/phantom` |
+
+---
+
+## 5. Docker
 
 Run Phantom in a container with Playwright and Chromium pre-installed.
 
@@ -446,7 +627,7 @@ docker compose logs -f phantom
 
 ---
 
-## 5. Environment Variables
+## 6. Environment Variables
 
 Phantom reads these environment variables at runtime. Both are required when running `phantom serve`.
 
@@ -482,7 +663,7 @@ Use the same value in both the `PHANTOM_WEBHOOK_SECRET` environment variable and
 
 ---
 
-## 6. Webhook Setup
+## 7. Webhook Setup
 
 Configure GitHub to send events to your Phantom server so screenshots update automatically on pushes and releases.
 
@@ -541,7 +722,7 @@ Pushes to branches other than `main`/`master` are ignored by default.
 
 ---
 
-## 7. Scheduling
+## 8. Scheduling
 
 Phantom supports cron-based scheduling through the `triggers` section of the manifest. Scheduled jobs run automatically when `phantom serve` is active.
 
