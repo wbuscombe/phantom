@@ -184,16 +184,18 @@ else
     add-apt-repository -y ppa:deadsnakes/ppa > /dev/null 2>&1
     apt-get update -qq
     apt-get install -y -qq python3.12 python3.12-venv python3.12-dev > /dev/null
-    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 2>/dev/null || true
+    # Do NOT use update-alternatives — changing the system python3 breaks apt_pkg
+    # on Ubuntu 22.04. Instead, phantom uses python3.12 explicitly via pipx.
     ok "Python 3.12 installed"
 fi
 
-# Ensure pip and pipx
+# Ensure pip and pipx (use system python for apt-managed packages)
 info "Installing pip and pipx"
-apt-get install -y -qq python3-pip python3-venv pipx > /dev/null 2>&1 || {
-    python3 -m ensurepip --upgrade 2>/dev/null || true
-    python3 -m pip install --quiet pipx 2>/dev/null || true
-}
+apt-get install -y -qq python3-pip python3-venv > /dev/null 2>&1 || true
+# Install pipx for the phantom user via python3.12
+sudo -u "${PHANTOM_USER}" python3.12 -m pip install --quiet --user pipx 2>/dev/null \
+    || apt-get install -y -qq pipx > /dev/null 2>&1 \
+    || true
 
 ok "Python toolchain ready"
 
@@ -232,11 +234,16 @@ fi
 
 # Install silicon and oxipng via cargo
 info "Installing silicon and oxipng (cargo)"
-# silicon needs some system libs
+# silicon needs XCB, harfbuzz, fontconfig, and freetype dev libs
 apt-get install -y -qq \
     libfontconfig1-dev \
     libfreetype6-dev \
     libexpat1-dev \
+    libxcb1-dev \
+    libxcb-render0-dev \
+    libxcb-shape0-dev \
+    libxcb-xfixes0-dev \
+    libharfbuzz-dev \
     > /dev/null
 
 sudo -u "${PHANTOM_USER}" bash -c '
@@ -285,8 +292,8 @@ if sudo -u "${PHANTOM_USER}" bash -c 'export PATH="$HOME/.local/bin:$PATH" && co
     ok "Phantom ${PHANTOM_VER} already installed"
 else
     info "Installing phantom-docs via pipx"
-    sudo -u "${PHANTOM_USER}" bash -c 'export PATH="$HOME/.local/bin:$PATH" && pipx install phantom-docs 2>/dev/null' \
-        || sudo -u "${PHANTOM_USER}" bash -c 'python3 -m pipx install phantom-docs 2>/dev/null' \
+    sudo -u "${PHANTOM_USER}" bash -c 'export PATH="$HOME/.local/bin:$PATH" && pipx install --python python3.12 phantom-docs 2>/dev/null' \
+        || sudo -u "${PHANTOM_USER}" bash -c 'python3.12 -m pipx install phantom-docs 2>/dev/null' \
         || warn "pipx install phantom-docs failed — install manually after setup"
     ok "Phantom installed"
 fi
@@ -330,7 +337,9 @@ FONT_DIR="/usr/share/fonts/phantom"
 mkdir -p "${FONT_DIR}"
 
 install_font() {
-    local name="$1" url="$2" dest_dir="${FONT_DIR}/${name}"
+    local name="$1"
+    local url="$2"
+    local dest_dir="${FONT_DIR}/${name}"
     if [[ -d "${dest_dir}" ]] && ls "${dest_dir}"/*.ttf &>/dev/null; then
         ok "Font ${name} already installed"
         return
@@ -521,13 +530,14 @@ PASS=0
 FAIL=0
 
 check_cmd() {
-    local label="$1" cmd="$2"
+    local label="$1"
+    local cmd="$2"
     if eval "${cmd}" &>/dev/null; then
         ok "${label}"
-        ((PASS++))
+        ((PASS++)) || true
     else
         warn "MISSING: ${label}"
-        ((FAIL++))
+        ((FAIL++)) || true
     fi
 }
 

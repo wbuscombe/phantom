@@ -30,9 +30,9 @@ PASS=0
 FAIL=0
 WARN=0
 
-pass() { printf "${GREEN}  ✓${NC} %s\n" "$*"; ((PASS++)); }
-fail() { printf "${RED}  ✗${NC} %s\n" "$*"; ((FAIL++)); }
-skip() { printf "${YELLOW}  ○${NC} %s\n" "$*"; ((WARN++)); }
+pass() { printf "${GREEN}  ✓${NC} %s\n" "$*"; ((PASS++)) || true; }
+fail() { printf "${RED}  ✗${NC} %s\n" "$*"; ((FAIL++)) || true; }
+skip() { printf "${YELLOW}  ○${NC} %s\n" "$*"; ((WARN++)) || true; }
 section() { printf "\n${BOLD}${CYAN}── %s ──${NC}\n" "$*"; }
 
 # ── Help ───────────────────────────────────────────────
@@ -97,8 +97,10 @@ check_cmd "maim"       maim --version
 check_cmd "jq"         jq --version
 check_cmd "curl"       curl --version
 
-# Python version check
-if python3 -c "import sys; exit(0 if sys.version_info >= (3, 12) else 1)" 2>/dev/null; then
+# Python version check (python3.12 may be a separate binary on Ubuntu 22.04)
+if python3.12 --version &>/dev/null; then
+    pass "Python 3.12: $(python3.12 --version 2>&1)"
+elif python3 -c "import sys; exit(0 if sys.version_info >= (3, 12) else 1)" 2>/dev/null; then
     pass "Python >= 3.12"
 else
     fail "Python >= 3.12 required (found $(python3 --version 2>&1))"
@@ -161,16 +163,29 @@ else
     fail "phantom CLI not found for ${PHANTOM_USER}"
 fi
 
-# Playwright check
-if sudo -u "${PHANTOM_USER}" bash -c 'export PATH="$HOME/.local/bin:$PATH" && python3 -c "from playwright.sync_api import sync_playwright"' &>/dev/null; then
+# Playwright check (may be in a venv or in ~/.local/bin)
+if sudo -u "${PHANTOM_USER}" bash -c '
+    for p in "$HOME/.phantom-venv/bin/python" "$HOME/.local/bin/python3"; do
+        if [ -x "$p" ] && "$p" -c "from playwright.sync_api import sync_playwright" 2>/dev/null; then
+            exit 0
+        fi
+    done
+    export PATH="$HOME/.local/bin:$PATH"
+    python3 -c "from playwright.sync_api import sync_playwright" 2>/dev/null
+' &>/dev/null; then
     pass "Playwright Python bindings available"
 else
     fail "Playwright Python bindings not found"
 fi
 
 # Check for Chromium browser
-if sudo -u "${PHANTOM_USER}" bash -c 'export PATH="$HOME/.local/bin:$PATH" && playwright install --dry-run chromium 2>&1' | grep -qi "already installed\|up to date" 2>/dev/null; then
+if sudo -u "${PHANTOM_USER}" bash -c '
+    export PATH="$HOME/.phantom-venv/bin:$HOME/.local/bin:$PATH"
+    playwright install --dry-run chromium 2>&1
+' | grep -qi "already installed\|up to date" 2>/dev/null; then
     pass "Playwright Chromium browser installed"
+elif [ -d "/home/${PHANTOM_USER}/.cache/ms-playwright/chromium"* ] 2>/dev/null; then
+    pass "Playwright Chromium browser directory found"
 else
     skip "Playwright Chromium status uncertain (may still work)"
 fi
@@ -180,7 +195,8 @@ section "Fonts"
 
 check_font() {
     local name="$1"
-    if fc-list | grep -qi "${name}"; then
+    # Use fc-list :family to limit output and avoid SIGPIPE with pipefail
+    if fc-list : family 2>/dev/null | grep -qi "${name}"; then
         pass "Font: ${name}"
     else
         fail "Font: ${name} not found"
@@ -195,7 +211,8 @@ check_font "Noto Color Emoji"
 section "Directories"
 
 check_dir() {
-    local path="$1" owner="$2"
+    local path="$1"
+    local owner="$2"
     if [[ -d "${path}" ]]; then
         local actual_owner
         actual_owner=$(stat -c '%U' "${path}" 2>/dev/null || stat -f '%Su' "${path}" 2>/dev/null || echo "unknown")
