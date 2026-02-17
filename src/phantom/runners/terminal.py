@@ -138,6 +138,9 @@ def _build_silicon_args(
         str(renderer_config.padding),
         "--background",
         renderer_config.background,
+        # TUI screen dumps are plain text; silicon can't auto-detect .txt files
+        "--language",
+        "Markdown",
     ]
     if not renderer_config.line_numbers:
         args.append("--no-line-number")

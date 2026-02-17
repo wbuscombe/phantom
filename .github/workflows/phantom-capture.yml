@@ -1,0 +1,170 @@
+name: Phantom Capture (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      project-type:
+        description: "Runner type: web, tui, or docker-compose"
+        required: true
+        type: string
+      phantom-version:
+        description: "Phantom version or branch (default: main)"
+        required: false
+        default: "main"
+        type: string
+      publish-strategy:
+        description: "How to publish screenshots: direct, pr, or artifacts-only"
+        required: false
+        default: "pr"
+        type: string
+      rust-cache:
+        description: "Cache Rust/silicon binaries for TUI runner"
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      github-token:
+        description: "GitHub token for pushing/PRs"
+        required: true
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout calling repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Phantom
+        run: |
+          if [[ "${{ inputs.phantom-version }}" == "main" || "${{ inputs.phantom-version }}" == *"/"* ]]; then
+            pip install "git+https://github.com/wbuscombe/phantom.git@${{ inputs.phantom-version }}"
+          else
+            pip install "phantom-capture==${{ inputs.phantom-version }}"
+          fi
+
+      # ── Web runner dependencies ──
+      - name: Install Playwright (web)
+        if: inputs.project-type == 'web'
+        run: playwright install chromium --with-deps
+
+      # ── TUI runner dependencies ──
+      - name: Setup Rust toolchain (tui)
+        if: inputs.project-type == 'tui'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache silicon binary (tui)
+        if: inputs.project-type == 'tui' && inputs.rust-cache
+        id: silicon-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/silicon
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: silicon-${{ runner.os }}-v0.5.2
+
+      - name: Install silicon system deps (tui)
+        if: inputs.project-type == 'tui'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libharfbuzz-dev libfreetype6-dev libexpat1-dev libfontconfig1-dev
+
+      - name: Install silicon (tui)
+        if: inputs.project-type == 'tui' && steps.silicon-cache.outputs.cache-hit != 'true'
+        run: cargo install silicon --version 0.5.2
+
+      - name: Install JetBrains Mono font (tui)
+        if: inputs.project-type == 'tui'
+        run: |
+          mkdir -p ~/.local/share/fonts
+          curl -fsSL https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip -o /tmp/jbmono.zip
+          unzip -q /tmp/jbmono.zip -d /tmp/jbmono
+          cp /tmp/jbmono/fonts/ttf/*.ttf ~/.local/share/fonts/
+          fc-cache -f
+
+      # ── Install project dependencies ──
+      - name: Detect and install project deps
+        run: |
+          if [ -f pyproject.toml ] || [ -f setup.py ]; then
+            pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          elif [ -f package.json ]; then
+            npm ci
+          elif [ -f Cargo.toml ]; then
+            cargo build --release
+          fi
+
+      # ── Validate & Capture ──
+      - name: Validate manifest
+        run: phantom validate .phantom.yml
+
+      - name: Run captures
+        run: phantom run --project . --skip-publish
+
+      # ── Upload artifacts (always, for debugging) ──
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phantom-screenshots
+          path: docs/screenshots/
+          if-no-files-found: warn
+
+      # ── Publish: direct commit ──
+      - name: Publish (direct)
+        if: inputs.publish-strategy == 'direct'
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token }}
+        run: |
+          git config user.name "Phantom Bot"
+          git config user.email "phantom@noreply"
+          git add docs/screenshots/ README.md
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "docs(screenshots): update via Phantom [skip ci]"
+            git push
+          fi
+
+      # ── Publish: PR ──
+      - name: Publish (pr)
+        if: inputs.publish-strategy == 'pr'
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token }}
+        run: |
+          BRANCH="phantom/update-screenshots-$(date +%s)"
+          git config user.name "Phantom Bot"
+          git config user.email "phantom@noreply"
+          git checkout -b "$BRANCH"
+          git add docs/screenshots/ README.md
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "docs(screenshots): update via Phantom"
+          git push -u origin "$BRANCH"
+          gh pr create \
+            --title "Update screenshots via Phantom" \
+            --body "$(cat <<'EOF'
+          ## Summary
+          - Updated screenshots captured by Phantom
+          - Auto-generated from `.phantom.yml` manifest
+
+          ## Preview
+          Check the `docs/screenshots/` directory for updated images.
+
+          🤖 Generated by [Phantom](https://github.com/wbuscombe/phantom)
+          EOF
+          )"
