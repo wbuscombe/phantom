@@ -218,6 +218,10 @@ Add markers to your README for automatic image updates:
 
 Phantom will inject the `<img>` tag between these markers when a capture with `readme_target: hero` changes.
 
+## Known Issues
+
+- **Analyst entry point detection:** `_detect_python_entry` picks the first `[project.scripts]` entry, which may not be the TUI entry point for projects with multiple scripts (e.g., `yt` CLI vs `yt-tui`). Needs a smarter heuristic that prefers entries containing "tui", "ui", or "gui" in the name.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, running tests, and contribution guidelines.
