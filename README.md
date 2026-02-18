@@ -80,6 +80,21 @@ phantom init
 phantom run -p .
 ```
 
+## Onboard Your Project
+
+The fastest way to set up Phantom for an existing project is with [Claude Code](https://claude.ai/claude-code). Copy the [onboarding prompt](docs/onboarding-prompt.md) into Claude Code while in your project's root directory — it will analyze your codebase and generate everything Phantom needs:
+
+- Demo mode with realistic fixture data
+- `.phantom.yml` manifest with 5-8 captures
+- GitHub Actions workflow for automated updates
+- README sentinels for screenshot placement
+
+```bash
+# From your project directory:
+cat path/to/phantom/docs/onboarding-prompt.md | pbcopy  # macOS
+# Then paste into Claude Code
+```
+
 ## Runners
 
 Phantom supports multiple runner types for different kinds of applications:
