@@ -97,17 +97,19 @@ def _key_to_bytes(key: str) -> bytes:
 
 
 def _dump_screen_ansi(screen: pyte.Screen) -> str:
-    """Dump the pyte screen buffer as plain text (no ANSI — silicon uses plain text)."""
+    """Dump the full pyte screen buffer as plain text for silicon rendering.
+
+    Every row is emitted at the full terminal width so that silicon always
+    renders a complete frame, regardless of how much content the TUI displays.
+    """
     lines: list[str] = []
     for row in range(screen.lines):
         chars: list[str] = []
         for col in range(screen.columns):
             char = screen.buffer[row][col]
             chars.append(char.data if char.data else " ")
-        lines.append("".join(chars).rstrip())
-    # Remove trailing empty lines
-    while lines and not lines[-1]:
-        lines.pop()
+        # Preserve full-width lines so silicon sees the complete terminal frame
+        lines.append("".join(chars).rstrip().ljust(screen.columns))
     return "\n".join(lines)
 
 

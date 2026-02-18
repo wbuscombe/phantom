@@ -96,7 +96,10 @@ class TestScreenBuffer:
     def test_dump_empty_screen(self) -> None:
         screen = pyte.Screen(10, 3)
         result = _dump_screen_ansi(screen)
-        assert result == ""
+        lines = result.split("\n")
+        # Full frame: all 3 rows emitted at full width
+        assert len(lines) == 3
+        assert all(len(line) == 10 for line in lines)
 
     def test_dump_with_content(self) -> None:
         screen = pyte.Screen(20, 3)
@@ -104,16 +107,23 @@ class TestScreenBuffer:
         stream.feed("Hello World\r\nLine 2")
         result = _dump_screen_ansi(screen)
         lines = result.split("\n")
-        assert lines[0] == "Hello World"
-        assert lines[1] == "Line 2"
+        # Full frame: all rows padded to terminal width
+        assert len(lines) == 3
+        assert lines[0].startswith("Hello World")
+        assert len(lines[0]) == 20
+        assert lines[1].startswith("Line 2")
+        assert len(lines[1]) == 20
 
-    def test_trailing_empty_lines_stripped(self) -> None:
+    def test_full_frame_preserved(self) -> None:
+        """All terminal rows are emitted so silicon renders a complete frame."""
         screen = pyte.Screen(20, 10)
         stream = pyte.Stream(screen)
         stream.feed("Only first line")
         result = _dump_screen_ansi(screen)
-        assert result == "Only first line"
-        assert "\n" not in result
+        lines = result.split("\n")
+        assert len(lines) == 10
+        assert lines[0].startswith("Only first line")
+        assert all(len(line) == 20 for line in lines)
 
     def test_screen_hash_changes_with_content(self) -> None:
         screen = pyte.Screen(20, 5)
