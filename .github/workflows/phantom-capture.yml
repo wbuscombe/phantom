@@ -22,10 +22,28 @@ on:
         required: false
         default: true
         type: boolean
+      ai-analyst:
+        description: "Use AI to generate capture plan from codebase analysis"
+        required: false
+        default: false
+        type: boolean
+      ai-document:
+        description: "Use AI to write documentation around screenshots"
+        required: false
+        default: false
+        type: boolean
+      ai-auto:
+        description: "Full autonomous pipeline (analyze + capture + document)"
+        required: false
+        default: false
+        type: boolean
     secrets:
       github-token:
         description: "GitHub token for pushing/PRs"
         required: true
+      anthropic-key:
+        description: "Anthropic API key for AI features"
+        required: false
 
 jobs:
   capture:
@@ -47,10 +65,14 @@ jobs:
 
       - name: Install Phantom
         run: |
+          AI_EXTRA=""
+          if [[ "${{ inputs.ai-analyst }}" == "true" || "${{ inputs.ai-document }}" == "true" || "${{ inputs.ai-auto }}" == "true" ]]; then
+            AI_EXTRA="[ai]"
+          fi
           if [[ "${{ inputs.phantom-version }}" == "main" || "${{ inputs.phantom-version }}" == *"/"* ]]; then
-            pip install "git+https://github.com/wbuscombe/phantom.git@${{ inputs.phantom-version }}"
+            pip install "git+https://github.com/wbuscombe/phantom.git@${{ inputs.phantom-version }}${AI_EXTRA}"
           else
-            pip install "phantom-capture==${{ inputs.phantom-version }}"
+            pip install "phantom-capture${AI_EXTRA}==${{ inputs.phantom-version }}"
           fi
 
       # ── Web runner dependencies ──
@@ -108,10 +130,25 @@ jobs:
 
       # ── Validate & Capture ──
       - name: Validate manifest
+        if: inputs.ai-analyst != true && inputs.ai-auto != true
         run: phantom validate .phantom.yml
 
       - name: Run captures
-        run: phantom run --project . --skip-publish
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.anthropic-key }}
+        run: |
+          FLAGS="--project . --skip-publish"
+          if [[ "${{ inputs.ai-auto }}" == "true" ]]; then
+            FLAGS="$FLAGS --ai-auto"
+          else
+            if [[ "${{ inputs.ai-analyst }}" == "true" ]]; then
+              FLAGS="$FLAGS --ai-analyst"
+            fi
+            if [[ "${{ inputs.ai-document }}" == "true" ]]; then
+              FLAGS="$FLAGS --ai-document"
+            fi
+          fi
+          phantom run $FLAGS
 
       # ── Upload artifacts (always, for debugging) ──
       - name: Upload screenshots

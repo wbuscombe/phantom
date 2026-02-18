@@ -86,6 +86,9 @@ def validate(manifest_path: str) -> None:
 @click.option("--skip-publish", is_flag=True, help="Capture and process but skip git.")
 @click.option("--force", is_flag=True, help="Commit even if below diff threshold.")
 @click.option("--if-changed", is_flag=True, help="Skip if repo HEAD matches last captured SHA.")
+@click.option("--ai-analyst", is_flag=True, help="Generate manifest via AI instead of reading .phantom.yml.")
+@click.option("--ai-document", is_flag=True, help="Use AI to update README with screenshots after capture.")
+@click.option("--ai-auto", is_flag=True, help="Full autonomous pipeline: AI analyze + capture + document.")
 @click.option("--verbose", "-v", is_flag=True, help="Enable debug logging.")
 def run(
     project: str,
@@ -96,6 +99,9 @@ def run(
     skip_publish: bool,
     force: bool,
     if_changed: bool,
+    ai_analyst: bool,
+    ai_document: bool,
+    ai_auto: bool,
     verbose: bool,
 ) -> None:
     """Run screenshot captures for a project."""
@@ -106,6 +112,11 @@ def run(
 
     configure_logging(verbose=verbose)
 
+    # --ai-auto implies both --ai-analyst and --ai-document
+    if ai_auto:
+        ai_analyst = True
+        ai_document = True
+
     console.print(f"[bold]Phantom v{__version__}[/bold] — run")
     console.print(f"  Project:      {project}")
 
@@ -113,6 +124,12 @@ def run(
         console.print("  Mode:         [yellow]dry-run[/yellow] (no commits)")
     if skip_publish:
         console.print("  Mode:         [yellow]skip-publish[/yellow] (no git)")
+    if ai_auto:
+        console.print("  Mode:         [cyan]ai-auto[/cyan] (analyze + capture + document)")
+    elif ai_analyst:
+        console.print("  Mode:         [cyan]ai-analyst[/cyan] (generating manifest)")
+    if ai_document and not ai_auto:
+        console.print("  Mode:         [cyan]ai-document[/cyan] (AI README update)")
     if capture_id:
         console.print(f"  Capture:      {capture_id}")
     if group:
@@ -122,23 +139,58 @@ def run(
     if if_changed:
         console.print("  If-changed:   [yellow]yes[/yellow] (skip if unchanged)")
 
-    # Resolve manifest path
-    manifest_path = Path(manifest) if manifest else Path(project) / ".phantom.yml"
-    if not manifest_path.exists():
-        alt = Path(".phantom.yml")
-        if alt.exists():
-            manifest_path = alt
-        else:
-            console.print(f"[red]Error:[/red] Manifest not found at {manifest_path}")
-            raise SystemExit(1)
+    # AI Analyst mode: generate manifest on the fly
+    if ai_analyst:
+        import tempfile
 
-    try:
-        m = load_manifest(str(manifest_path))
-    except ManifestError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise SystemExit(1) from None
+        from phantom.analyst.analyzer import ProjectAnalyzer
 
-    console.print(f"  Manifest:     {manifest_path}")
+        project_path = Path(project).resolve()
+        analyzer = ProjectAnalyzer()
+
+        console.print("  Analyzing project...")
+        plan = asyncio.get_event_loop().run_until_complete(analyzer.analyze(project_path))
+        manifest_yaml = asyncio.get_event_loop().run_until_complete(
+            analyzer.generate_manifest(plan, project_path)
+        )
+
+        console.print(f"  AI plan: {len(plan.captures)} captures, {len(plan.features)} features")
+        if verbose:
+            console.print("\n[dim]Generated manifest:[/dim]")
+            console.print(manifest_yaml)
+
+        # Write to temp file and load
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".phantom.yml", delete=False)
+        tmp.write(manifest_yaml)
+        tmp.close()
+        manifest_path_resolved = Path(tmp.name)
+
+        try:
+            m = load_manifest(str(manifest_path_resolved))
+        except ManifestError as e:
+            console.print(f"[red]Error in generated manifest:[/red] {e}")
+            console.print("[dim]Raw manifest written to: " + tmp.name + "[/dim]")
+            raise SystemExit(1) from None
+    else:
+        # Resolve manifest path
+        manifest_path_resolved = Path(manifest) if manifest else Path(project) / ".phantom.yml"
+        if not manifest_path_resolved.exists():
+            alt = Path(".phantom.yml")
+            if alt.exists():
+                manifest_path_resolved = alt
+            else:
+                console.print(
+                    f"[red]Error:[/red] Manifest not found at {manifest_path_resolved}"
+                )
+                raise SystemExit(1)
+
+        try:
+            m = load_manifest(str(manifest_path_resolved))
+        except ManifestError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise SystemExit(1) from None
+
+    console.print(f"  Manifest:     {manifest_path_resolved}")
     console.print(f"  Captures:     {len(m.captures)}")
     console.print()
 
@@ -146,7 +198,7 @@ def run(
     project_path = Path(project).resolve()
     if not project_path.is_dir():
         # Try manifest's parent directory
-        project_path = manifest_path.parent.resolve()
+        project_path = manifest_path_resolved.parent.resolve()
 
     options = JobOptions(
         dry_run=dry_run,
@@ -167,6 +219,10 @@ def run(
 
     # Print report
     _print_report(report, elapsed)
+
+    # AI Documentation step (post-capture)
+    if ai_document and not report.error:
+        _run_ai_document(project_path, plan if ai_analyst else None, m, verbose)
 
     if report.error:
         raise SystemExit(1)
@@ -211,6 +267,157 @@ def _print_report(report: JobReport, elapsed: float) -> None:
         lines.append(f"\n[red]Error:[/red] {report.error}")
 
     output.print(Panel("\n".join(lines), title="Phantom Run Report", border_style=status_color))
+
+
+def _run_ai_document(
+    project_path: Path,
+    plan: object | None,
+    manifest: object,
+    verbose: bool,
+) -> None:
+    """Run the AI documentation writer to update README with screenshots."""
+    from phantom.analyst.costs import CostTracker
+    from phantom.analyst.documenter import DocumentationWriter, DocumenterError
+
+    console.print("\n[cyan]Running AI documentation writer...[/cyan]")
+
+    # Gather screenshot paths from manifest captures
+    screenshots: list[Path] = []
+    for cap in manifest.captures:  # type: ignore[attr-defined]
+        output_path = project_path / cap.output
+        if output_path.exists():
+            screenshots.append(output_path)
+
+    if not screenshots:
+        console.print("[yellow]No screenshots found to document.[/yellow]")
+        return
+
+    console.print(f"  Screenshots: {len(screenshots)} found")
+
+    cost_tracker = CostTracker()
+    writer = DocumentationWriter(cost_tracker=cost_tracker)
+
+    try:
+        doc_update = asyncio.get_event_loop().run_until_complete(
+            writer.write_docs(
+                screenshots=screenshots,
+                plan=plan,  # type: ignore[arg-type]
+                project_dir=project_path,
+            )
+        )
+
+        if doc_update.screenshots_placed > 0:
+            readme_path = project_path / doc_update.target_file
+            readme_path.write_text(doc_update.updated_content, encoding="utf-8")
+            console.print(f"  [green]Updated {doc_update.target_file}[/green]")
+            console.print(f"  Placed:   {doc_update.screenshots_placed} screenshots")
+            if doc_update.sections_modified:
+                console.print(f"  Modified: {', '.join(doc_update.sections_modified)}")
+            if doc_update.new_sections_added:
+                console.print(f"  Added:    {', '.join(doc_update.new_sections_added)}")
+        else:
+            console.print("  [dim]No screenshots placed.[/dim]")
+
+        summary = cost_tracker.summary()
+        if verbose:
+            console.print(
+                f"  [dim]Doc cost: ${summary['estimated_cost_usd']:.4f} "
+                f"({summary['total_input_tokens']} in / "
+                f"{summary['total_output_tokens']} out)[/dim]"
+            )
+
+    except DocumenterError as e:
+        console.print(f"[red]Documentation error:[/red] {e}")
+
+
+@main.command()
+@click.option("--dir", "directory", default=".", help="Project directory to analyze.")
+@click.option("--model", default="claude-sonnet-4-20250514", help="Claude model to use.")
+@click.option("--max-cost", type=float, default=0.50, help="Maximum cost in USD.")
+@click.option("--write", is_flag=True, help="Write the generated manifest to .phantom.yml.")
+@click.option("--verbose", "-v", is_flag=True, help="Show full plan details.")
+def analyze(directory: str, model: str, max_cost: float, write: bool, verbose: bool) -> None:
+    """Analyze a project and generate a .phantom.yml manifest via AI."""
+    from phantom.analyst.analyzer import AnalystDependencyError, AnalystError, ProjectAnalyzer
+    from phantom.analyst.costs import CostTracker
+    from phantom.utils.logging import configure_logging
+
+    configure_logging(verbose=verbose)
+
+    project_dir = Path(directory).resolve()
+    output.print(f"[bold]Phantom v{__version__}[/bold] — analyze")
+    output.print(f"  Project: {project_dir}")
+    output.print(f"  Model:   {model}")
+    output.print(f"  Budget:  ${max_cost:.2f}")
+    output.print()
+
+    cost_tracker = CostTracker(max_cost_usd=max_cost)
+    analyzer = ProjectAnalyzer(model=model, cost_tracker=cost_tracker)
+
+    try:
+        # Detect project type
+        project_type = asyncio.get_event_loop().run_until_complete(
+            analyzer.detect_project_type(project_dir)
+        )
+        output.print(f"  Detected type: [cyan]{project_type}[/cyan]")
+
+        # Run analysis
+        plan = asyncio.get_event_loop().run_until_complete(analyzer.analyze(project_dir))
+
+        if verbose:
+            output.print()
+            output.print("[bold]Features:[/bold]")
+            for feat in plan.features:
+                output.print(
+                    f"  [{feat.importance}] {feat.name} ({feat.ui_type}) — {feat.description}"
+                )
+
+            output.print()
+            output.print("[bold]Captures:[/bold]")
+            for cap in plan.captures:
+                output.print(f"  [{cap.importance}] {cap.id} — {cap.description}")
+                if cap.navigation_actions:
+                    for act in cap.navigation_actions:
+                        output.print(f"      {act}")
+
+            output.print()
+            output.print("[bold]Doc Sections:[/bold]")
+            for sec in plan.documentation_sections:
+                output.print(f"  {sec.section_header} → {sec.target_file} ({sec.placement})")
+
+        # Generate manifest
+        manifest_yaml = asyncio.get_event_loop().run_until_complete(
+            analyzer.generate_manifest(plan, project_dir)
+        )
+
+        if write:
+            manifest_path = project_dir / ".phantom.yml"
+            manifest_path.write_text(manifest_yaml)
+            output.print(f"\n[green]Wrote manifest to {manifest_path}[/green]")
+        else:
+            output.print()
+            output.print(Panel(manifest_yaml, title=".phantom.yml", border_style="cyan"))
+
+        # Cost summary
+        summary = cost_tracker.summary()
+        output.print()
+        output.print(
+            f"[dim]Cost: ${summary['estimated_cost_usd']:.4f} "
+            f"({summary['total_input_tokens']} in / {summary['total_output_tokens']} out, "
+            f"{summary['call_count']} call(s))[/dim]"
+        )
+
+    except AnalystDependencyError:
+        console.print(
+            "[red]Error:[/red] The 'anthropic' package is required. "
+            "Install with: pip install 'phantom-docs[ai]'"
+        )
+        raise SystemExit(1) from None
+    except AnalystError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        if hasattr(e, "raw_response") and e.raw_response:
+            console.print(f"[dim]Raw response: {e.raw_response[:500]}[/dim]")
+        raise SystemExit(1) from None
 
 
 def _detect_project_type(directory: Path) -> str | None:
@@ -677,3 +884,69 @@ def gc(days: int, workspace_root: str, dry_run: bool) -> None:
         output.print(f"\n[yellow]Would remove {removed} workspace(s) ({total_mb:.1f} MB)[/yellow]")
     else:
         output.print(f"\n[green]Removed {removed} workspace(s) ({total_mb:.1f} MB)[/green]")
+
+
+@main.command()
+@click.option("--project", "-p", help="Filter by project name.")
+def costs(project: str | None) -> None:
+    """Show AI Analyst cost summary from run history."""
+    from phantom.conductor.state import DEFAULT_STATE_FILE, StateManager
+
+    output.print(f"[bold]Phantom v{__version__}[/bold] — costs")
+    output.print()
+
+    if not DEFAULT_STATE_FILE.exists():
+        output.print("[dim]No state file found. Run some captures first.[/dim]")
+        return
+
+    state_mgr = StateManager()
+    state = state_mgr.load()
+
+    if not state.projects:
+        output.print("[dim]No projects tracked yet.[/dim]")
+        return
+
+    # Aggregate stats across all (or filtered) projects
+    total_runs = 0
+    projects_list = []
+
+    for name, proj in state.projects.items():
+        if project and name != project:
+            continue
+        total_runs += proj.total_runs
+        projects_list.append(proj)
+
+    if not projects_list:
+        output.print(f"[dim]No data for project '{project}'.[/dim]")
+        return
+
+    lines = [
+        f"[bold]Projects tracked:[/bold] {len(projects_list)}",
+        f"[bold]Total runs:[/bold]       {total_runs}",
+    ]
+
+    # Per-project breakdown
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Project")
+    table.add_column("Runs")
+    table.add_column("Last Status")
+    table.add_column("Last Run")
+
+    from datetime import datetime
+
+    for proj in projects_list:
+        last_run_str = (
+            datetime.fromtimestamp(proj.last_run).strftime("%Y-%m-%d %H:%M")
+            if proj.last_run
+            else "never"
+        )
+        status_str = proj.last_status or "-"
+        table.add_row(proj.project, str(proj.total_runs), status_str, last_run_str)
+
+    output.print(Panel("\n".join(lines), title="Cost Summary", border_style="cyan"))
+    output.print(table)
+    output.print()
+    output.print(
+        "[dim]Note: Detailed per-call token costs are shown in 'phantom analyze --verbose' "
+        "and 'phantom run --ai-document --verbose' output.[/dim]"
+    )
