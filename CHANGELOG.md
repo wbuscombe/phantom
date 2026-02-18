@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **AI Analyst engine** (`phantom analyze`) for autonomous codebase analysis and manifest generation via Claude API.
+- **Documentation Writer** (`--ai-document`) for AI-powered README screenshot placement with retina-aware img tags.
+- **Full autonomous pipeline** (`--ai-auto`) combining analysis, capture, and documentation in a single command.
+- **Cost tracking** (`phantom costs`) with budget enforcement for API calls ($0.50 default per run).
+- **FileSelector** with project-type-specific file prioritization under 25K token budget.
+- **Path-based CI trigger filtering** for push events in GitHub Actions workflows.
+- **Reusable workflow inputs** for `ai-analyst`, `ai-document`, `ai-auto`, and `anthropic-key` secret.
+- **126 new tests** (115 unit + 11 integration) for analyst engine and documentation writer, all with mocked API calls.
+
 ## [0.1.0] - 2026-02-12
 
 ### Added
