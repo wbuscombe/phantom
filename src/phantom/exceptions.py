@@ -124,3 +124,18 @@ class QueueError(ConductorError):
 
 class SchedulerError(ConductorError):
     """Scheduler encountered an error."""
+
+
+# ── Analyst ──────────────────────────────────────────
+
+
+class AnalystError(PhantomError):
+    """Base for AI analyst errors."""
+
+
+class AnalystBudgetExceeded(AnalystError):
+    """An API call would exceed the configured budget."""
+
+
+class AnalystDependencyError(AnalystError):
+    """The anthropic package is not installed."""
