@@ -4,13 +4,13 @@ on:
   workflow_call:
     inputs:
       project-type:
-        description: "Runner type: web, tui, or docker-compose"
+        description: "Runner type: web, tui, desktop, or docker-compose"
         required: true
         type: string
       phantom-version:
-        description: "Phantom version or branch (default: main)"
+        description: "Phantom PyPI version (e.g. 0.2.0) or git ref (e.g. main)"
         required: false
-        default: "main"
+        default: "0.2.0"
         type: string
       publish-strategy:
         description: "How to publish screenshots: direct, pr, or artifacts-only"
@@ -69,13 +69,23 @@ jobs:
           if [[ "${{ inputs.ai-analyst }}" == "true" || "${{ inputs.ai-document }}" == "true" || "${{ inputs.ai-auto }}" == "true" ]]; then
             AI_EXTRA="[ai]"
           fi
-          if [[ "${{ inputs.phantom-version }}" == "main" || "${{ inputs.phantom-version }}" == *"/"* ]]; then
-            pip install "git+https://github.com/wbuscombe/phantom.git@${{ inputs.phantom-version }}${AI_EXTRA}"
+          VERSION="${{ inputs.phantom-version }}"
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            pip install "phantom-docs${AI_EXTRA}==${VERSION}"
           else
-            pip install "phantom-docs${AI_EXTRA}==${{ inputs.phantom-version }}"
+            pip install "git+https://github.com/wbuscombe/phantom.git@${VERSION}${AI_EXTRA}"
           fi
+          phantom --version
 
       # ── Web runner dependencies ──
+      - name: Cache Playwright browsers (web)
+        if: inputs.project-type == 'web'
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium
+
       - name: Install Playwright (web)
         if: inputs.project-type == 'web'
         run: playwright install chromium --with-deps
@@ -117,11 +127,20 @@ jobs:
           cp /tmp/jbmono/fonts/ttf/*.ttf ~/.local/share/fonts/
           fc-cache -f
 
+      # ── Desktop runner dependencies (SDL, Swing, etc.) ──
+      - name: Install desktop deps (xvfb)
+        if: inputs.project-type == 'desktop'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
+
       # ── Install project dependencies ──
       - name: Detect and install project deps
         run: |
           if [ -f pyproject.toml ] || [ -f setup.py ]; then
             pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
           elif [ -f package.json ]; then
             npm ci
           elif [ -f Cargo.toml ]; then
@@ -136,6 +155,7 @@ jobs:
       - name: Run captures
         env:
           ANTHROPIC_API_KEY: ${{ secrets.anthropic-key }}
+          PHANTOM_MODE: "1"
         run: |
           FLAGS="--project . --skip-publish"
           if [[ "${{ inputs.ai-auto }}" == "true" ]]; then
