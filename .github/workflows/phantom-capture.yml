@@ -72,7 +72,7 @@ jobs:
           if [[ "${{ inputs.phantom-version }}" == "main" || "${{ inputs.phantom-version }}" == *"/"* ]]; then
             pip install "git+https://github.com/wbuscombe/phantom.git@${{ inputs.phantom-version }}${AI_EXTRA}"
           else
-            pip install "phantom-capture${AI_EXTRA}==${{ inputs.phantom-version }}"
+            pip install "phantom-docs${AI_EXTRA}==${{ inputs.phantom-version }}"
           fi
 
       # ── Web runner dependencies ──
