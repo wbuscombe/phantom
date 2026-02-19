@@ -242,11 +242,15 @@ class ProjectAnalyzer:
         yaml.default_flow_style = False
         yaml.width = 120
 
+        # Determine display name: prefer README H1, then convert plan name
+        display_name = self._extract_display_name(plan.project_name, project_dir)
+        project_slug = display_name.lower().replace(" ", "-")
+
         # Build the manifest structure
         manifest: dict[str, Any] = {
             "phantom": "1",
-            "project": plan.project_name.lower().replace(" ", "-"),
-            "name": plan.project_name,
+            "project": project_slug,
+            "name": display_name,
         }
 
         # Setup section
@@ -274,6 +278,7 @@ class ProjectAnalyzer:
             "theme": "dark",
             "device_scale": 2,
             "timeout": 15,
+            "retry": {"max_attempts": 2, "backoff_ms": 1000},
         }
         if plan.project_type == "tui":
             manifest["capture_defaults"]["wait_after_actions"] = 500
@@ -329,7 +334,7 @@ class ProjectAnalyzer:
                     "venv/bin/pip install -e .",
                 ]
                 # Try to find the entry point
-                entry = self._detect_python_entry(project_dir)
+                entry = self._detect_python_entry(project_dir, plan.project_type)
                 setup["run"] = {
                     "command": entry or "venv/bin/python -m src.app",
                     "env": {"PHANTOM_MODE": "1"},
@@ -357,8 +362,38 @@ class ProjectAnalyzer:
 
         return setup
 
-    def _detect_python_entry(self, project_dir: Path) -> str | None:
-        """Try to detect the Python entry point from pyproject.toml."""
+    @staticmethod
+    def _extract_display_name(plan_name: str, project_dir: Path) -> str:
+        """Extract a display name for the project.
+
+        Priority:
+        1. README H1 heading (first `# Title` line)
+        2. Convert kebab-case/snake_case plan name to Title Case
+        3. Use plan name as-is if it looks like a proper name already
+        """
+        # Try README H1
+        readme_path = project_dir / "README.md"
+        if readme_path.exists():
+            with contextlib.suppress(OSError):
+                for line in readme_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("# ") and not stripped.startswith("## "):
+                        title = stripped[2:].strip()
+                        if title:
+                            return title
+
+        # Convert kebab-case or snake_case to Title Case
+        if "-" in plan_name or "_" in plan_name:
+            return plan_name.replace("-", " ").replace("_", " ").title()
+
+        return plan_name
+
+    def _detect_python_entry(self, project_dir: Path, project_type: str = "tui") -> str | None:
+        """Try to detect the Python entry point from pyproject.toml.
+
+        For TUI projects, prefers scripts with tui/ui/gui/app/dashboard in their
+        name or target module. Falls back to first entry otherwise.
+        """
         pyproject = project_dir / "pyproject.toml"
         if not pyproject.exists():
             return None
@@ -368,7 +403,8 @@ class ProjectAnalyzer:
         except OSError:
             return None
 
-        # Look for [project.scripts] section
+        # Parse all [project.scripts] entries
+        scripts: list[tuple[str, str]] = []  # (name, target)
         in_scripts = False
         for line in content.splitlines():
             stripped = line.strip()
@@ -379,9 +415,30 @@ class ProjectAnalyzer:
                 if stripped.startswith("["):
                     break
                 if "=" in stripped:
-                    name, _target = stripped.split("=", 1)
-                    return f"venv/bin/{name.strip()}"
-        return None
+                    name, target = stripped.split("=", 1)
+                    scripts.append((name.strip(), target.strip().strip('"').strip("'")))
+
+        if not scripts:
+            return None
+
+        # For TUI projects, prefer entries with TUI-related keywords
+        if project_type == "tui":
+            tui_keywords = {"tui", "ui", "gui", "app", "dashboard"}
+
+            # First pass: check script name for TUI keywords
+            for name, _target in scripts:
+                name_lower = name.lower().replace("-", " ").replace("_", " ")
+                if any(kw in name_lower.split() for kw in tui_keywords):
+                    return f"venv/bin/{name}"
+
+            # Second pass: check target module/function for TUI keywords
+            for name, target in scripts:
+                target_lower = target.lower()
+                if any(kw in target_lower for kw in tui_keywords):
+                    return f"venv/bin/{name}"
+
+        # Fall back to first entry
+        return f"venv/bin/{scripts[0][0]}"
 
     async def generate_seed_requirements(self, plan: AnalysisPlan) -> str:
         """Generate a markdown description of what demo data is needed."""

@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Reusable workflow inputs** for `ai-analyst`, `ai-document`, `ai-auto`, and `anthropic-key` secret.
 - **126 new tests** (115 unit + 11 integration) for analyst engine and documentation writer, all with mocked API calls.
 
+### Fixed
+
+- **Entry point detection** now prefers TUI-related scripts (`yt-tui`) over CLI tools (`yt`) for projects with multiple `[project.scripts]` entries.
+- **Project display name** extracted from README H1 heading instead of using raw package name; kebab-case/snake_case names converted to Title Case.
+- **Retry config** (`max_attempts: 2, backoff_ms: 1000`) added to generated manifest `capture_defaults`.
+
 ## [0.1.0] - 2026-02-12
 
 ### Added
