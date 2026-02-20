@@ -170,11 +170,15 @@ class TestQualityCheckerReal:
         import numpy as np
         from PIL import Image
 
-        # Create a gradient
+        # Create a gradient with noise to ensure realistic file size
         arr = np.zeros((600, 800, 3), dtype=np.uint8)
         for x in range(800):
             for y in range(600):
                 arr[y, x] = [x % 256, y % 256, (x + y) % 256]
+
+        # Add noise so PNG doesn't compress to under 5KB
+        noise = np.random.randint(-5, 6, arr.shape, dtype=np.int16)
+        arr = np.clip(arr.astype(np.int16) + noise, 0, 255).astype(np.uint8)
 
         img = Image.fromarray(arr)
         path = tmp_path / "gradient.png"
