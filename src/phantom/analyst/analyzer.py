@@ -24,6 +24,7 @@ from phantom.analyst.prompts import (
     build_user_prompt,
 )
 from phantom.analyst.state import AnalystStateManager
+from phantom.exceptions import AnalystDependencyError as AnalystDependencyError  # re-export
 from phantom.exceptions import PhantomError
 
 if TYPE_CHECKING:
@@ -41,16 +42,6 @@ class AnalystError(PhantomError):
     def __init__(self, message: str, raw_response: str | None = None) -> None:
         self.raw_response = raw_response
         super().__init__(message)
-
-
-class AnalystDependencyError(PhantomError):
-    """Raised when the anthropic package is not installed."""
-
-    def __init__(self) -> None:
-        super().__init__(
-            "The 'anthropic' package is required for the AI Analyst. "
-            "Install it with: pip install 'phantom-docs[ai]'"
-        )
 
 
 def _get_anthropic_client(api_key: str | None = None) -> Any:

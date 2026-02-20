@@ -470,13 +470,12 @@ def analyze(
             from phantom.analyst.diff import DiffAnalyzer
 
             head_sha = DiffAnalyzer(project_dir).get_head_sha()
-            summary = cost_tracker.summary()
             state_mgr.update_after_analysis(
                 commit_sha=head_sha,
                 manifest_yaml=manifest_yaml,
-                cost_usd=float(summary["estimated_cost_usd"]),
-                input_tokens=int(summary["total_input_tokens"]),
-                output_tokens=int(summary["total_output_tokens"]),
+                cost_usd=cost_tracker.estimated_cost_usd,
+                input_tokens=cost_tracker.total_input_tokens,
+                output_tokens=cost_tracker.total_output_tokens,
                 recommendation="full",
             )
 
@@ -1146,10 +1145,10 @@ def costs(project: str | None, directory: tuple[str, ...]) -> None:
             output.print("[dim]No state file found. Run some captures first.[/dim]")
         return
 
-    state_mgr = StateManager()
-    state = state_mgr.load()
+    conductor_mgr = StateManager()
+    conductor_state = conductor_mgr.load()
 
-    if not state.projects:
+    if not conductor_state.projects:
         output.print("[dim]No projects tracked yet.[/dim]")
         return
 
@@ -1157,7 +1156,7 @@ def costs(project: str | None, directory: tuple[str, ...]) -> None:
     total_runs = 0
     projects_list = []
 
-    for name, proj in state.projects.items():
+    for name, proj in conductor_state.projects.items():
         if project and name != project:
             continue
         total_runs += proj.total_runs

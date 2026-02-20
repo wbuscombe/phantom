@@ -140,6 +140,12 @@ class AnalystBudgetExceeded(AnalystError):  # noqa: N818
 class AnalystDependencyError(AnalystError):
     """The anthropic package is not installed."""
 
+    def __init__(self) -> None:
+        super().__init__(
+            "The 'anthropic' package is required for the AI Analyst. "
+            "Install it with: pip install 'phantom-docs[ai]'"
+        )
+
 
 class AnalystStateError(AnalystError):
     """Failed to read or write the analyst state file."""

@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
@@ -86,8 +86,8 @@ class JobReport:
     trigger_source: str = "cli"
     skipped_unchanged: bool = False
     avg_diff_pct: float | None = None
-    quality_reports: list[object] = field(default_factory=list)
-    consistency_report: object | None = None
+    quality_reports: list[Any] = field(default_factory=list)
+    consistency_report: Any | None = None
 
 
 class Orchestrator:
@@ -572,7 +572,7 @@ class Orchestrator:
         self,
         pipeline_results: list[PipelineResult],
         workspace: Workspace,
-    ) -> tuple[list[object], object | None]:
+    ) -> tuple[list[Any], Any | None]:
         """Run quality checks on processed screenshots. Returns (reports, consistency)."""
         try:
             from phantom.analyst.quality import QualityChecker

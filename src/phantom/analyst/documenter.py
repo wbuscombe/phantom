@@ -40,7 +40,7 @@ def _get_anthropic_client(api_key: str | None = None) -> Any:
     try:
         import anthropic
     except ImportError:
-        from phantom.analyst.analyzer import AnalystDependencyError
+        from phantom.exceptions import AnalystDependencyError
 
         raise AnalystDependencyError from None
 
