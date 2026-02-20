@@ -190,7 +190,7 @@ def run(
             console.print(manifest_yaml)
 
         # Write to temp file and load
-        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".phantom.yml", delete=False)
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".phantom.yml", delete=False)  # noqa: SIM115
         tmp.write(manifest_yaml)
         tmp.close()
         manifest_path_resolved = Path(tmp.name)

@@ -133,7 +133,7 @@ class AnalystError(PhantomError):
     """Base for AI analyst errors."""
 
 
-class AnalystBudgetExceeded(AnalystError):
+class AnalystBudgetExceeded(AnalystError):  # noqa: N818
     """An API call would exceed the configured budget."""
 
 

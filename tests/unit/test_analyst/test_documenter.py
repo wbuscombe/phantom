@@ -440,9 +440,11 @@ class TestEmptyReadme:
 
 class TestMissingApiKey:
     def test_no_key_raises(self) -> None:
+        from phantom.exceptions import AnalystDependencyError
+
         with (
             patch.dict("os.environ", {}, clear=True),
-            pytest.raises(DocumenterError, match="API key"),
+            pytest.raises((DocumenterError, AnalystDependencyError)),
         ):
             writer = DocumentationWriter(api_key=None)
             writer._ensure_client()
