@@ -147,6 +147,15 @@ jobs:
             cargo build --release
           fi
 
+      # ── Cache analyst state for incremental CI runs ──
+      - name: Cache analyst state
+        if: inputs.ai-analyst == true || inputs.ai-auto == true
+        uses: actions/cache@v4
+        with:
+          path: .phantom-state.json
+          key: phantom-analyst-state-${{ github.repository }}-${{ github.ref }}
+          restore-keys: phantom-analyst-state-${{ github.repository }}-
+
       # ── Validate & Capture ──
       - name: Validate manifest
         if: inputs.ai-analyst != true && inputs.ai-auto != true

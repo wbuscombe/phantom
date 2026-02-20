@@ -14,9 +14,16 @@ import structlog
 from ruamel.yaml import YAML
 
 from phantom.analyst.costs import CostTracker
+from phantom.analyst.diff import DiffAnalyzer
 from phantom.analyst.file_selector import FileSelector
-from phantom.analyst.models import AnalysisPlan
-from phantom.analyst.prompts import build_system_prompt, build_user_prompt
+from phantom.analyst.models import AnalysisPlan, AnalystDiffResult, CaptureSpec
+from phantom.analyst.prompts import (
+    build_incremental_prompt,
+    build_incremental_system_prompt,
+    build_system_prompt,
+    build_user_prompt,
+)
+from phantom.analyst.state import AnalystStateManager
 from phantom.exceptions import PhantomError
 
 if TYPE_CHECKING:
@@ -439,6 +446,271 @@ class ProjectAnalyzer:
 
         # Fall back to first entry
         return f"venv/bin/{scripts[0][0]}"
+
+    async def analyze_incremental(
+        self,
+        project_dir: Path,
+        force_full: bool = False,
+    ) -> tuple[AnalysisPlan, AnalystDiffResult]:
+        """Incremental analysis — only re-analyzes affected captures.
+
+        1. Load AnalystState, run DiffAnalyzer
+        2. skip → re-parse previous manifest from state, return
+        3. incremental → call Claude with lighter prompt, merge with previous
+        4. full → delegate to existing analyze()
+        5. Save updated state
+
+        Returns:
+            Tuple of (plan, diff_result) where diff_result shows what was done.
+        """
+        state_mgr = AnalystStateManager(project_dir)
+        state = state_mgr.load()
+
+        project_type = await self.detect_project_type(project_dir)
+
+        # Run diff analysis
+        diff_analyzer = DiffAnalyzer(project_dir)
+        head_sha = diff_analyzer.get_head_sha()
+
+        if force_full or not state.last_analysis_commit:
+            diff_result = AnalystDiffResult(
+                recommendation="full",
+                reason="Forced full analysis" if force_full else "No prior analysis state",
+            )
+        else:
+            # Build capture list from previous manifest to inform diff analysis
+            previous_captures = []
+            if state.last_manifest_yaml:
+                try:
+                    prev_plan = self._parse_manifest_to_plan(state.last_manifest_yaml)
+                    if prev_plan:
+                        previous_captures = prev_plan.captures
+                except Exception:
+                    pass
+
+            diff_result = diff_analyzer.analyze(
+                last_sha=state.last_analysis_commit,
+                captures=previous_captures,
+                project_type=project_type,
+            )
+
+        logger.info(
+            "incremental_analysis_recommendation",
+            recommendation=diff_result.recommendation,
+            reason=diff_result.reason,
+            changed_files=len(diff_result.changed_files),
+            affected_captures=len(diff_result.affected_capture_ids),
+        )
+
+        # Handle skip
+        if diff_result.recommendation == "skip":
+            if state.last_manifest_yaml:
+                plan = self._parse_manifest_to_plan(state.last_manifest_yaml)
+                if plan:
+                    state_mgr.update_after_analysis(
+                        commit_sha=head_sha,
+                        recommendation="skip",
+                    )
+                    return plan, diff_result
+
+            # Can't skip without a previous manifest — fall through to full
+            diff_result = AnalystDiffResult(
+                recommendation="full",
+                changed_files=diff_result.changed_files,
+                reason="No previous manifest available, falling back to full",
+            )
+
+        # Handle full analysis
+        if diff_result.recommendation == "full":
+            plan = await self.analyze(project_dir)
+            manifest_yaml = await self.generate_manifest(plan, project_dir)
+
+            state_mgr.update_after_analysis(
+                commit_sha=head_sha,
+                manifest_yaml=manifest_yaml,
+                cost_usd=self.cost_tracker.estimated_cost_usd,
+                input_tokens=self.cost_tracker.total_input_tokens,
+                output_tokens=self.cost_tracker.total_output_tokens,
+                recommendation="full",
+            )
+            return plan, diff_result
+
+        # Handle incremental analysis
+        assert diff_result.recommendation == "incremental"
+        assert state.last_manifest_yaml is not None
+
+        previous_plan = self._parse_manifest_to_plan(state.last_manifest_yaml)
+        if not previous_plan:
+            # Can't do incremental without a valid previous plan
+            plan = await self.analyze(project_dir)
+            manifest_yaml = await self.generate_manifest(plan, project_dir)
+            state_mgr.update_after_analysis(
+                commit_sha=head_sha,
+                manifest_yaml=manifest_yaml,
+                cost_usd=self.cost_tracker.estimated_cost_usd,
+                input_tokens=self.cost_tracker.total_input_tokens,
+                output_tokens=self.cost_tracker.total_output_tokens,
+                recommendation="full",
+            )
+            diff_result.recommendation = "full"
+            diff_result.reason = "Previous manifest invalid, fell back to full"
+            return plan, diff_result
+
+        client = self._ensure_client()
+
+        # Build incremental prompt
+        system_prompt = build_incremental_system_prompt(project_type)
+        user_prompt = build_incremental_prompt(
+            project_type=project_type,
+            project_dir_name=project_dir.name,
+            changed_files=diff_result.changed_files,
+            previous_manifest=state.last_manifest_yaml,
+        )
+
+        input_estimate = (len(system_prompt) + len(user_prompt)) // _CHARS_PER_TOKEN
+        output_estimate = 2048  # Smaller output for incremental
+        self.cost_tracker.require_budget(input_estimate, output_estimate)
+
+        logger.info(
+            "incremental_api_call",
+            model=self.model,
+            input_estimate=input_estimate,
+            affected_captures=diff_result.affected_capture_ids,
+        )
+
+        response = client.messages.create(
+            model=self.model,
+            max_tokens=2048,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+
+        self.cost_tracker.record_usage(
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+        )
+
+        raw_text = response.content[0].text
+        incremental_plan = self._parse_response(raw_text)
+
+        if incremental_plan is None:
+            # Incremental parse failed — fall back to full
+            logger.warning("incremental_parse_failed_falling_back_to_full")
+            plan = await self.analyze(project_dir)
+            manifest_yaml = await self.generate_manifest(plan, project_dir)
+            state_mgr.update_after_analysis(
+                commit_sha=head_sha,
+                manifest_yaml=manifest_yaml,
+                cost_usd=self.cost_tracker.estimated_cost_usd,
+                input_tokens=self.cost_tracker.total_input_tokens,
+                output_tokens=self.cost_tracker.total_output_tokens,
+                recommendation="full",
+            )
+            diff_result.recommendation = "full"
+            diff_result.reason = "Incremental parse failed, fell back to full"
+            return plan, diff_result
+
+        # Merge incremental results with previous plan
+        plan = self._merge_plans(previous_plan, incremental_plan)
+        manifest_yaml = await self.generate_manifest(plan, project_dir)
+
+        state_mgr.update_after_analysis(
+            commit_sha=head_sha,
+            manifest_yaml=manifest_yaml,
+            cost_usd=self.cost_tracker.estimated_cost_usd,
+            input_tokens=self.cost_tracker.total_input_tokens,
+            output_tokens=self.cost_tracker.total_output_tokens,
+            recommendation="incremental",
+        )
+
+        logger.info(
+            "incremental_analysis_complete",
+            total_captures=len(plan.captures),
+            updated_captures=len(incremental_plan.captures),
+        )
+
+        return plan, diff_result
+
+    def _parse_manifest_to_plan(self, manifest_yaml: str) -> AnalysisPlan | None:
+        """Parse a manifest YAML back into an AnalysisPlan.
+
+        This is a best-effort reverse mapping — we extract what we can.
+        """
+        yaml = YAML()
+        try:
+            data = yaml.load(manifest_yaml)
+        except Exception:
+            return None
+
+        if not isinstance(data, dict):
+            return None
+
+        captures = []
+        for cap_data in data.get("captures", []):
+            if not isinstance(cap_data, dict):
+                continue
+            try:
+                captures.append(
+                    CaptureSpec(
+                        id=cap_data.get("id", "unknown"),
+                        name=cap_data.get("name", "Unknown"),
+                        description=cap_data.get("alt_text", ""),
+                        alt_text=cap_data.get("alt_text", ""),
+                        importance=3,
+                        navigation_actions=cap_data.get("actions", []),
+                    )
+                )
+            except Exception:
+                continue
+
+        setup = data.get("setup")
+        project_type = setup.get("type", "web") if isinstance(setup, dict) else "web"
+        if project_type not in {"web", "tui", "docker-compose"}:
+            project_type = "web"
+
+        name = str(data.get("name") or data.get("project") or "unknown")
+
+        try:
+            return AnalysisPlan(
+                project_type=str(project_type),
+                project_name=name,
+                project_description=f"Project {name}",
+                captures=captures,
+            )
+        except Exception:
+            return None
+
+    @staticmethod
+    def _merge_plans(previous: AnalysisPlan, incremental: AnalysisPlan) -> AnalysisPlan:
+        """Merge incremental analysis results with the previous plan.
+
+        Replace matching capture IDs, append new ones, keep others unchanged.
+        """
+        updated_ids = {c.id for c in incremental.captures}
+        merged_captures = []
+
+        # Keep all previous captures that weren't updated
+        for cap in previous.captures:
+            if cap.id not in updated_ids:
+                merged_captures.append(cap)
+
+        # Add all updated/new captures
+        merged_captures.extend(incremental.captures)
+
+        return AnalysisPlan(
+            project_type=previous.project_type,
+            project_name=incremental.project_name or previous.project_name,
+            project_description=incremental.project_description or previous.project_description,
+            tech_stack=incremental.tech_stack or previous.tech_stack,
+            features=incremental.features or previous.features,
+            captures=merged_captures,
+            demo_data_requirements=(
+                incremental.demo_data_requirements or previous.demo_data_requirements
+            ),
+            documentation_sections=(
+                incremental.documentation_sections or previous.documentation_sections
+            ),
+        )
 
     async def generate_seed_requirements(self, plan: AnalysisPlan) -> str:
         """Generate a markdown description of what demo data is needed."""

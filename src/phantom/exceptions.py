@@ -139,3 +139,7 @@ class AnalystBudgetExceeded(AnalystError):
 
 class AnalystDependencyError(AnalystError):
     """The anthropic package is not installed."""
+
+
+class AnalystStateError(AnalystError):
+    """Failed to read or write the analyst state file."""

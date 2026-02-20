@@ -86,9 +86,16 @@ def validate(manifest_path: str) -> None:
 @click.option("--skip-publish", is_flag=True, help="Capture and process but skip git.")
 @click.option("--force", is_flag=True, help="Commit even if below diff threshold.")
 @click.option("--if-changed", is_flag=True, help="Skip if repo HEAD matches last captured SHA.")
-@click.option("--ai-analyst", is_flag=True, help="Generate manifest via AI instead of reading .phantom.yml.")
-@click.option("--ai-document", is_flag=True, help="Use AI to update README with screenshots after capture.")
-@click.option("--ai-auto", is_flag=True, help="Full autonomous pipeline: AI analyze + capture + document.")
+@click.option(
+    "--ai-analyst", is_flag=True, help="Generate manifest via AI instead of reading .phantom.yml."
+)
+@click.option(
+    "--ai-document", is_flag=True, help="Use AI to update README with screenshots after capture."
+)
+@click.option(
+    "--ai-auto", is_flag=True, help="Full autonomous pipeline: AI analyze + capture + document."
+)
+@click.option("--full", is_flag=True, help="Force full AI analysis (ignore incremental state).")
 @click.option("--verbose", "-v", is_flag=True, help="Enable debug logging.")
 def run(
     project: str,
@@ -102,6 +109,7 @@ def run(
     ai_analyst: bool,
     ai_document: bool,
     ai_auto: bool,
+    full: bool,
     verbose: bool,
 ) -> None:
     """Run screenshot captures for a project."""
@@ -140,16 +148,38 @@ def run(
         console.print("  If-changed:   [yellow]yes[/yellow] (skip if unchanged)")
 
     # AI Analyst mode: generate manifest on the fly
+    affected_capture_ids: list[str] | None = None
     if ai_analyst:
         import tempfile
 
         from phantom.analyst.analyzer import ProjectAnalyzer
+        from phantom.analyst.state import AnalystStateManager
 
         project_path = Path(project).resolve()
         analyzer = ProjectAnalyzer()
+        state_mgr = AnalystStateManager(project_path)
 
-        console.print("  Analyzing project...")
-        plan = asyncio.get_event_loop().run_until_complete(analyzer.analyze(project_path))
+        # Use incremental if state exists and not forced full
+        if not full and state_mgr.has_state():
+            console.print("  Analyzing project (incremental)...")
+            plan, diff_result = asyncio.get_event_loop().run_until_complete(
+                analyzer.analyze_incremental(project_path, force_full=False)
+            )
+            console.print(
+                f"  Diff: [cyan]{diff_result.recommendation}[/cyan] — {diff_result.reason}"
+            )
+
+            if diff_result.recommendation == "skip":
+                console.print("  [green]No changes require re-capture.[/green]")
+                return
+
+            if diff_result.recommendation == "incremental" and diff_result.affected_capture_ids:
+                affected_capture_ids = diff_result.affected_capture_ids
+                console.print(f"  Incremental: {len(affected_capture_ids)} captures affected")
+        else:
+            console.print("  Analyzing project (full)...")
+            plan = asyncio.get_event_loop().run_until_complete(analyzer.analyze(project_path))
+
         manifest_yaml = asyncio.get_event_loop().run_until_complete(
             analyzer.generate_manifest(plan, project_path)
         )
@@ -179,9 +209,7 @@ def run(
             if alt.exists():
                 manifest_path_resolved = alt
             else:
-                console.print(
-                    f"[red]Error:[/red] Manifest not found at {manifest_path_resolved}"
-                )
+                console.print(f"[red]Error:[/red] Manifest not found at {manifest_path_resolved}")
                 raise SystemExit(1)
 
         try:
@@ -205,6 +233,7 @@ def run(
         skip_publish=skip_publish,
         force=force,
         capture_id=capture_id,
+        capture_ids=affected_capture_ids,
         group=group,
         local_project=project_path,
         if_changed=if_changed,
@@ -335,11 +364,22 @@ def _run_ai_document(
 @click.option("--model", default="claude-sonnet-4-20250514", help="Claude model to use.")
 @click.option("--max-cost", type=float, default=0.50, help="Maximum cost in USD.")
 @click.option("--write", is_flag=True, help="Write the generated manifest to .phantom.yml.")
+@click.option("--full", is_flag=True, help="Force full analysis (ignore incremental state).")
+@click.option("--dry-run", is_flag=True, help="Show diff recommendation only, no API call.")
 @click.option("--verbose", "-v", is_flag=True, help="Show full plan details.")
-def analyze(directory: str, model: str, max_cost: float, write: bool, verbose: bool) -> None:
+def analyze(
+    directory: str,
+    model: str,
+    max_cost: float,
+    write: bool,
+    full: bool,
+    dry_run: bool,
+    verbose: bool,
+) -> None:
     """Analyze a project and generate a .phantom.yml manifest via AI."""
     from phantom.analyst.analyzer import AnalystDependencyError, AnalystError, ProjectAnalyzer
     from phantom.analyst.costs import CostTracker
+    from phantom.analyst.state import AnalystStateManager
     from phantom.utils.logging import configure_logging
 
     configure_logging(verbose=verbose)
@@ -349,6 +389,16 @@ def analyze(directory: str, model: str, max_cost: float, write: bool, verbose: b
     output.print(f"  Project: {project_dir}")
     output.print(f"  Model:   {model}")
     output.print(f"  Budget:  ${max_cost:.2f}")
+
+    state_mgr = AnalystStateManager(project_dir)
+
+    if not full and state_mgr.has_state() and not dry_run:
+        output.print("  Mode:    [cyan]incremental[/cyan] (use --full to force full analysis)")
+    elif full:
+        output.print("  Mode:    [yellow]full[/yellow] (forced)")
+    elif dry_run:
+        output.print("  Mode:    [yellow]dry-run[/yellow] (diff check only)")
+
     output.print()
 
     cost_tracker = CostTracker(max_cost_usd=max_cost)
@@ -361,8 +411,74 @@ def analyze(directory: str, model: str, max_cost: float, write: bool, verbose: b
         )
         output.print(f"  Detected type: [cyan]{project_type}[/cyan]")
 
-        # Run analysis
-        plan = asyncio.get_event_loop().run_until_complete(analyzer.analyze(project_dir))
+        # Dry-run mode: just show diff recommendation
+        if dry_run:
+            from phantom.analyst.diff import DiffAnalyzer
+
+            state = state_mgr.load()
+            diff_analyzer = DiffAnalyzer(project_dir)
+            head_sha = diff_analyzer.get_head_sha()
+
+            output.print(f"  HEAD:          {head_sha[:8] if head_sha else 'unknown'}")
+            output.print(
+                f"  Last analyzed: {state.last_analysis_commit[:8] if state.last_analysis_commit else 'never'}"
+            )
+
+            if state.last_analysis_commit:
+                changed = diff_analyzer.get_changed_files(state.last_analysis_commit)
+                classified = diff_analyzer.classify_changes(changed, project_type)
+                output.print(f"  Changed files: {len(changed)}")
+                output.print(f"    Visual:      {len(classified['visual'])}")
+                output.print(f"    Non-visual:  {len(classified['non_visual'])}")
+                if verbose:
+                    for f in classified["visual"]:
+                        output.print(f"      [cyan]{f}[/cyan]")
+                    for f in classified["non_visual"]:
+                        output.print(f"      [dim]{f}[/dim]")
+            else:
+                output.print("  [dim]No prior state — would run full analysis[/dim]")
+            return
+
+        # Incremental mode if state exists and not forced
+        if not full and state_mgr.has_state():
+            plan, diff_result = asyncio.get_event_loop().run_until_complete(
+                analyzer.analyze_incremental(project_dir, force_full=False)
+            )
+
+            output.print(f"  Recommendation: [cyan]{diff_result.recommendation}[/cyan]")
+            output.print(f"  Reason:         {diff_result.reason}")
+            if diff_result.changed_files:
+                output.print(f"  Changed files:  {len(diff_result.changed_files)}")
+            if diff_result.affected_capture_ids:
+                output.print(f"  Affected:       {', '.join(diff_result.affected_capture_ids)}")
+
+            if diff_result.recommendation == "skip":
+                output.print("\n[green]No changes require re-analysis.[/green]")
+                summary = cost_tracker.summary()
+                output.print(
+                    f"[dim]Cost: $0.0000 (saved ~${max_cost * 0.3:.4f} vs full analysis)[/dim]"
+                )
+                return
+        else:
+            # Full analysis
+            plan = asyncio.get_event_loop().run_until_complete(analyzer.analyze(project_dir))
+
+            # Save state for future incremental runs
+            manifest_yaml = asyncio.get_event_loop().run_until_complete(
+                analyzer.generate_manifest(plan, project_dir)
+            )
+            from phantom.analyst.diff import DiffAnalyzer
+
+            head_sha = DiffAnalyzer(project_dir).get_head_sha()
+            summary = cost_tracker.summary()
+            state_mgr.update_after_analysis(
+                commit_sha=head_sha,
+                manifest_yaml=manifest_yaml,
+                cost_usd=float(summary["estimated_cost_usd"]),
+                input_tokens=int(summary["total_input_tokens"]),
+                output_tokens=int(summary["total_output_tokens"]),
+                recommendation="full",
+            )
 
         if verbose:
             output.print()
@@ -418,6 +534,79 @@ def analyze(directory: str, model: str, max_cost: float, write: bool, verbose: b
         if hasattr(e, "raw_response") and e.raw_response:
             console.print(f"[dim]Raw response: {e.raw_response[:500]}[/dim]")
         raise SystemExit(1) from None
+
+
+@main.command()
+@click.option("--dir", "directory", default=".", help="Project directory to check.")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed file lists.")
+def diff(directory: str, verbose: bool) -> None:
+    """Show what changed since the last AI analysis (no API calls)."""
+    from phantom.analyst.diff import DiffAnalyzer
+    from phantom.analyst.state import AnalystStateManager
+
+    project_dir = Path(directory).resolve()
+    output.print(f"[bold]Phantom v{__version__}[/bold] — diff")
+    output.print(f"  Project: {project_dir}")
+    output.print()
+
+    state_mgr = AnalystStateManager(project_dir)
+
+    if not state_mgr.has_state():
+        output.print("[dim]No analyst state found. Run 'phantom analyze' first.[/dim]")
+        return
+
+    state = state_mgr.load()
+    diff_analyzer = DiffAnalyzer(project_dir)
+    head_sha = diff_analyzer.get_head_sha()
+
+    output.print(f"  HEAD:          {head_sha[:8] if head_sha else 'unknown'}")
+    output.print(
+        f"  Last analyzed: {state.last_analysis_commit[:8] if state.last_analysis_commit else 'never'}"
+    )
+    output.print(f"  Total analyses: {state.total_analyses}")
+    output.print(
+        f"  Breakdown:     {state.full_analyses} full, "
+        f"{state.incremental_analyses} incremental, "
+        f"{state.skipped_analyses} skipped"
+    )
+    output.print()
+
+    if not state.last_analysis_commit:
+        output.print("[dim]No prior commit recorded — would run full analysis.[/dim]")
+        return
+
+    # Detect project type for classification
+    detected_type = _detect_project_type(project_dir) or "web"
+
+    changed = diff_analyzer.get_changed_files(state.last_analysis_commit)
+    if not changed:
+        output.print("[green]No changes since last analysis.[/green]")
+        output.print("  Recommendation: [green]skip[/green]")
+        return
+
+    classified = diff_analyzer.classify_changes(changed, detected_type)
+
+    output.print(f"  Changed files: {len(changed)}")
+    output.print(f"    Visual:      [cyan]{len(classified['visual'])}[/cyan]")
+    output.print(f"    Non-visual:  [dim]{len(classified['non_visual'])}[/dim]")
+
+    if verbose:
+        if classified["visual"]:
+            output.print("\n  [bold]Visual changes:[/bold]")
+            for f in classified["visual"]:
+                output.print(f"    [cyan]{f}[/cyan]")
+        if classified["non_visual"]:
+            output.print("\n  [bold]Non-visual changes:[/bold]")
+            for f in classified["non_visual"]:
+                output.print(f"    [dim]{f}[/dim]")
+
+    # Determine recommendation
+    if not classified["visual"]:
+        output.print("\n  Recommendation: [green]skip[/green] (only non-visual changes)")
+    else:
+        output.print("\n  Recommendation: [yellow]re-analyze[/yellow] (visual changes detected)")
+        if not verbose:
+            output.print("  Run with --verbose to see changed files.")
 
 
 def _detect_project_type(directory: Path) -> str | None:
@@ -888,15 +1077,73 @@ def gc(days: int, workspace_root: str, dry_run: bool) -> None:
 
 @main.command()
 @click.option("--project", "-p", help="Filter by project name.")
-def costs(project: str | None) -> None:
-    """Show AI Analyst cost summary from run history."""
+@click.option(
+    "--dir", "directory", multiple=True, help="Project directory to check for analyst state."
+)
+def costs(project: str | None, directory: tuple[str, ...]) -> None:
+    """Show AI Analyst cost summary from run history and analyst state."""
     from phantom.conductor.state import DEFAULT_STATE_FILE, StateManager
 
     output.print(f"[bold]Phantom v{__version__}[/bold] — costs")
     output.print()
 
+    # Show analyst state data if project dirs are specified
+    if directory:
+        from phantom.analyst.state import AnalystStateManager
+
+        output.print("[bold]Analyst State (per-project):[/bold]")
+        output.print()
+
+        analyst_table = Table(show_header=True, header_style="bold")
+        analyst_table.add_column("Project")
+        analyst_table.add_column("Analyses")
+        analyst_table.add_column("Full")
+        analyst_table.add_column("Incremental")
+        analyst_table.add_column("Skipped")
+        analyst_table.add_column("Cost")
+        analyst_table.add_column("Avg Cost/Run")
+        analyst_table.add_column("Tokens (in/out)")
+
+        total_cost = 0.0
+        total_analyses = 0
+
+        for d in directory:
+            proj_dir = Path(d).resolve()
+            mgr = AnalystStateManager(proj_dir)
+            if not mgr.has_state():
+                analyst_table.add_row(proj_dir.name, "-", "-", "-", "-", "-", "-", "-")
+                continue
+
+            state = mgr.load()
+            total_cost += state.cumulative_cost_usd
+            total_analyses += state.total_analyses
+            avg_cost = (
+                f"${state.cumulative_cost_usd / state.total_analyses:.4f}"
+                if state.total_analyses > 0
+                else "-"
+            )
+            analyst_table.add_row(
+                proj_dir.name,
+                str(state.total_analyses),
+                str(state.full_analyses),
+                str(state.incremental_analyses),
+                str(state.skipped_analyses),
+                f"${state.cumulative_cost_usd:.4f}",
+                avg_cost,
+                f"{state.cumulative_input_tokens}/{state.cumulative_output_tokens}",
+            )
+
+        output.print(analyst_table)
+        output.print()
+        output.print(
+            f"[dim]Total analyst cost: ${total_cost:.4f} across {total_analyses} analyses[/dim]"
+        )
+        output.print()
+
+    # Show conductor state data
     if not DEFAULT_STATE_FILE.exists():
-        output.print("[dim]No state file found. Run some captures first.[/dim]")
+        if not directory:
+            output.print("[dim]No state file found. Run some captures first.[/dim]")
         return
 
     state_mgr = StateManager()
@@ -919,6 +1166,8 @@ def costs(project: str | None) -> None:
     if not projects_list:
         output.print(f"[dim]No data for project '{project}'.[/dim]")
         return
+
+    output.print("[bold]Run History:[/bold]")
 
     lines = [
         f"[bold]Projects tracked:[/bold] {len(projects_list)}",
@@ -947,6 +1196,7 @@ def costs(project: str | None) -> None:
     output.print(table)
     output.print()
     output.print(
-        "[dim]Note: Detailed per-call token costs are shown in 'phantom analyze --verbose' "
-        "and 'phantom run --ai-document --verbose' output.[/dim]"
+        "[dim]Note: Use --dir to include per-project analyst cost breakdown. "
+        "Detailed per-call token costs are shown in 'phantom analyze --verbose' "
+        "output.[/dim]"
     )

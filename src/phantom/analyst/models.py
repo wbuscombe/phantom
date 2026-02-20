@@ -126,3 +126,65 @@ class DocUpdate(BaseModel):
     screenshots_placed: int = Field(ge=0)
     sections_modified: list[str] = Field(default_factory=list)
     new_sections_added: list[str] = Field(default_factory=list)
+
+
+class AnalystDiffResult(BaseModel):
+    """Result of git diff analysis — determines what needs re-analysis."""
+
+    recommendation: str = Field(description="skip | incremental | full")
+    changed_files: list[str] = Field(default_factory=list)
+    affected_capture_ids: list[str] = Field(default_factory=list)
+    reason: str = Field(default="")
+    commit_range: str = Field(default="")
+
+    @field_validator("recommendation")
+    @classmethod
+    def validate_recommendation(cls, v: str) -> str:
+        allowed = {"skip", "incremental", "full"}
+        if v not in allowed:
+            msg = f"recommendation must be one of {sorted(allowed)}, got '{v}'"
+            raise ValueError(msg)
+        return v
+
+
+class QualityIssue(BaseModel):
+    """A single quality issue found in a screenshot."""
+
+    check: str = Field(description="Name of the quality check")
+    severity: str = Field(description="warning | error")
+    message: str = Field(description="Human-readable description")
+    value: float | None = Field(default=None, description="Actual measured value")
+    threshold: float | None = Field(default=None, description="Expected threshold")
+
+    @field_validator("severity")
+    @classmethod
+    def validate_severity(cls, v: str) -> str:
+        allowed = {"warning", "error"}
+        if v not in allowed:
+            msg = f"severity must be one of {sorted(allowed)}, got '{v}'"
+            raise ValueError(msg)
+        return v
+
+
+class QualityReport(BaseModel):
+    """Quality validation report for a single screenshot."""
+
+    capture_id: str
+    passed: bool = True
+    issues: list[QualityIssue] = Field(default_factory=list)
+    file_size_kb: float = 0.0
+    width: int = 0
+    height: int = 0
+    entropy: float = 0.0
+    color_count: int = 0
+
+
+class ConsistencyReport(BaseModel):
+    """Cross-screenshot consistency report."""
+
+    passed: bool = True
+    issues: list[QualityIssue] = Field(default_factory=list)
+    screenshot_count: int = 0
+    avg_file_size_kb: float = 0.0
+    size_variance_pct: float = 0.0
+    aspect_ratio_consistent: bool = True

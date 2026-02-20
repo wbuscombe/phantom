@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-02-20
+
 ### Added
 
 - **AI Analyst engine** (`phantom analyze`) for autonomous codebase analysis and manifest generation via Claude API.
@@ -16,7 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **FileSelector** with project-type-specific file prioritization under 25K token budget.
 - **Path-based CI trigger filtering** for push events in GitHub Actions workflows.
 - **Reusable workflow inputs** for `ai-analyst`, `ai-document`, `ai-auto`, and `anthropic-key` secret.
-- **126 new tests** (115 unit + 11 integration) for analyst engine and documentation writer, all with mocked API calls.
+- **Diff-aware incremental analysis** (`phantom analyze --full`, `--dry-run`) that reads git diffs to skip unchanged captures, reducing API costs for small changes.
+- **DiffAnalyzer** classifies file changes as visual/non-visual per project type, maps changed files to affected captures, and recommends skip/incremental/full re-analysis.
+- **Per-project analyst state** (`.phantom-state.json`) tracking last commit, manifest hash, cumulative costs/tokens, and analysis counts with atomic writes.
+- **QualityChecker** for post-capture screenshot validation: blank detection, entropy, file size, transparency, color variety, dimensions, and aspect ratio checks.
+- **Consistency checking** across multiple screenshots (size variance, aspect ratio uniformity).
+- **`phantom diff`** command for quick diff analysis without API calls — shows recommendation and affected captures.
+- **Enhanced `phantom costs`** with per-project breakdown: full/incremental/skipped runs, cumulative cost, average cost per run.
+- **Incremental capture support** in orchestrator via `capture_ids` filtering on `JobOptions`.
+- **GitHub Actions state caching** for incremental CI runs via `actions/cache@v4` on `.phantom-state.json`.
+- **191 new tests** (180 unit + 11 integration) covering analyst engine, documentation writer, diff analyzer, quality checker, state management, and incremental analysis.
 
 ### Fixed
 
@@ -46,4 +57,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Auto-detection** in `phantom init` for project type based on marker files (package.json, Cargo.toml, docker-compose.yml, etc.).
 - **246+ unit and integration tests** covering models, runners, darkroom, publisher, orchestrator, CLI, webhooks, queue, scheduler, and state management.
 
+[0.2.0]: https://github.com/wbuscombe/phantom/releases/tag/v0.2.0
 [0.1.0]: https://github.com/wbuscombe/phantom/releases/tag/v0.1.0

@@ -98,6 +98,80 @@ def build_system_prompt(project_type: str) -> str:
     return ANALYSIS_SYSTEM_PROMPT.format(schema=_SCHEMA_JSON, guidance=guidance)
 
 
+INCREMENTAL_SYSTEM_PROMPT = """\
+You are a documentation analyst for open-source software projects. You previously \
+analyzed this project and generated a capture plan. Some files have changed since \
+your last analysis. Your job is to determine which captures need updating and \
+return ONLY the captures that need changes.
+
+You will receive:
+1. The list of changed files
+2. Your previous capture plan (as JSON)
+3. Key source files from the project
+
+Respond with a JSON object matching this exact schema:
+
+{schema}
+
+IMPORTANT:
+- Return ONLY captures that need updating based on the changed files
+- Keep capture IDs the same for existing captures that need updates
+- You may add new captures if the changes introduce new features
+- Do not include unchanged captures — they will be merged automatically
+- If no captures need updating, return an empty captures list
+- Maintain the same project_type, project_name, and project_description
+
+{guidance}
+
+Respond ONLY with the JSON object. No markdown, no explanation, no code fences."""
+
+
+def build_incremental_prompt(
+    project_type: str,
+    project_dir_name: str,
+    changed_files: list[str],
+    previous_manifest: str,
+    selected_files: list[tuple[str, str]] | None = None,
+) -> str:
+    """Build a lighter user prompt for incremental analysis.
+
+    Args:
+        project_type: Detected project type.
+        project_dir_name: Name of the project directory.
+        changed_files: List of file paths that changed.
+        previous_manifest: The previous manifest YAML content.
+        selected_files: Optional list of (path, content) for changed files.
+    """
+    parts = [
+        f"Incremental update for {project_type} project: **{project_dir_name}**\n",
+        "## Changed files since last analysis:\n",
+    ]
+
+    for f in changed_files:
+        parts.append(f"- `{f}`")
+
+    parts.append("\n## Previous capture plan:\n")
+    parts.append(f"```yaml\n{previous_manifest}\n```\n")
+
+    if selected_files:
+        parts.append("## Key changed source files:\n")
+        for path, content in selected_files:
+            parts.append(f"### {path}\n```\n{content}\n```\n")
+
+    parts.append(
+        "Based on the changed files, determine which captures need updating. "
+        "Return ONLY captures that need changes."
+    )
+
+    return "\n".join(parts)
+
+
+def build_incremental_system_prompt(project_type: str) -> str:
+    """Build the system prompt for incremental analysis."""
+    guidance = _GUIDANCE_MAP.get(project_type, _WEB_GUIDANCE)
+    return INCREMENTAL_SYSTEM_PROMPT.format(schema=_SCHEMA_JSON, guidance=guidance)
+
+
 def build_user_prompt(
     project_type: str,
     project_dir_name: str,

@@ -57,6 +57,7 @@ class JobOptions:
     skip_publish: bool = False
     force: bool = False
     capture_id: str | None = None
+    capture_ids: list[str] | None = None  # For incremental: specific captures to run
     group: str | None = None
     local_project: Path | None = None  # For local dev, skip clone
     if_changed: bool = False  # Skip if repo HEAD matches last captured SHA
@@ -85,6 +86,8 @@ class JobReport:
     trigger_source: str = "cli"
     skipped_unchanged: bool = False
     avg_diff_pct: float | None = None
+    quality_reports: list[object] = field(default_factory=list)
+    consistency_report: object | None = None
 
 
 class Orchestrator:
@@ -177,6 +180,11 @@ class Orchestrator:
 
             # Copy processed files to project dir
             self._copy_outputs_to_project(pipeline_results, workspace)
+
+            # Quality checks (warnings only, don't block)
+            quality_reports, consistency_report = self._check_quality(pipeline_results, workspace)
+            report.quality_reports = quality_reports
+            report.consistency_report = consistency_report
 
             # Publish
             self._transition(JobState.PUBLISHING)
@@ -339,7 +347,7 @@ class Orchestrator:
         await run_fixtures(self._manifest.fixtures, workspace.project_dir, env)
 
     async def _run_captures(self, runner: BaseRunner, ctx: RunnerContext) -> list[CaptureResult]:
-        """Run captures, optionally filtered by --capture or --group."""
+        """Run captures, optionally filtered by --capture, --capture-ids, or --group."""
 
         # If --capture is specified, filter to just that capture
         if self._options.capture_id:
@@ -353,11 +361,22 @@ class Orchestrator:
             result = await runner._capture_with_retry(ctx, target)
             return [result]
 
+        # If capture_ids list is specified (incremental mode), filter to those
+        if self._options.capture_ids:
+            target_ids = set(self._options.capture_ids)
+            resolved = ctx.manifest.resolve_captures()
+            results: list[CaptureResult] = []
+            for cap in resolved:
+                if cap.id in target_ids and not cap.skip:
+                    result = await runner._capture_with_retry(ctx, cap)
+                    results.append(result)
+            return results
+
         # If --group is specified, filter to group members
         if self._options.group:
             group_ids = set(ctx.manifest.get_group(self._options.group))
             resolved = ctx.manifest.resolve_captures()
-            results: list[CaptureResult] = []
+            results = []
             for cap in resolved:
                 if cap.id in group_ids and not cap.skip:
                     result = await runner._capture_with_retry(ctx, cap)
@@ -548,6 +567,70 @@ class Orchestrator:
             return await remove_stale_files(workspace.project_dir, stale)
 
         return 0
+
+    def _check_quality(
+        self,
+        pipeline_results: list[PipelineResult],
+        workspace: Workspace,
+    ) -> tuple[list[object], object | None]:
+        """Run quality checks on processed screenshots. Returns (reports, consistency)."""
+        try:
+            from phantom.analyst.quality import QualityChecker
+        except ImportError:
+            return [], None
+
+        checker = QualityChecker()
+        reports = []
+
+        for result in pipeline_results:
+            # Find the final output path in the project dir
+            cap_def = next(
+                (c for c in self._manifest.captures if c.id == result.capture_id),
+                None,
+            )
+            if not cap_def:
+                continue
+
+            output_path = workspace.project_dir / cap_def.output
+            if not output_path.exists():
+                continue
+
+            try:
+                qr = checker.check_screenshot(output_path, result.capture_id)
+                reports.append(qr)
+
+                if not qr.passed:
+                    logger.warning(
+                        "quality_check_failed",
+                        capture_id=result.capture_id,
+                        issues=[i.message for i in qr.issues if i.severity == "error"],
+                    )
+                elif qr.issues:
+                    logger.info(
+                        "quality_check_warnings",
+                        capture_id=result.capture_id,
+                        warnings=[i.message for i in qr.issues],
+                    )
+            except Exception as e:
+                logger.warning(
+                    "quality_check_error",
+                    capture_id=result.capture_id,
+                    error=str(e),
+                )
+
+        consistency = None
+        if reports:
+            try:
+                consistency = checker.check_consistency(reports)
+                if consistency.issues:
+                    logger.info(
+                        "quality_consistency_warnings",
+                        issues=[i.message for i in consistency.issues],
+                    )
+            except Exception as e:
+                logger.warning("quality_consistency_error", error=str(e))
+
+        return reports, consistency
 
     def _record_run(self, report: JobReport) -> None:
         """Record this run in the state manager."""
