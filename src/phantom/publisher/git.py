@@ -355,6 +355,164 @@ async def remove_stale_files(repo_dir: Path, stale_files: list[str]) -> int:
     return removed
 
 
+SQUASH_BRANCH = "phantom/screenshots"
+
+
+async def _get_current_branch(repo_dir: Path) -> str:
+    """Return the current branch name."""
+    result = await run_command("git", "rev-parse", "--abbrev-ref", "HEAD", cwd=repo_dir, timeout=5)
+    return result.stdout.strip()
+
+
+async def _branch_exists(repo_dir: Path, branch: str) -> bool:
+    """Check whether a local branch exists."""
+    result = await run_command("git", "rev-parse", "--verify", branch, cwd=repo_dir, timeout=5)
+    return result.returncode == 0
+
+
+async def publish_squash(
+    repo_dir: Path,
+    pipeline_results: list[PipelineResult],
+    publishing_config: PublishingConfig,
+    project_name: str,
+    readme_updated: bool = False,
+    force: bool = False,
+    dry_run: bool = False,
+    trigger_source: str | None = None,
+    quality_reports: list[object] | None = None,
+) -> PublishResult:
+    """Publish via squash: commit to a side branch, squash-merge into target.
+
+    This produces a single clean commit on the target branch regardless
+    of how many intermediate Phantom runs happened.
+
+    Flow:
+        1. Checkout (or create) ``phantom/screenshots`` from *target*
+        2. Stage and commit screenshot files there
+        3. Checkout *target*
+        4. ``git merge --squash phantom/screenshots``
+        5. Commit with the descriptive message
+        6. Delete the side branch
+        7. Push *target*
+    """
+    target_branch = publishing_config.branch
+    changed_results = [r for r in pipeline_results if r.changed or force]
+
+    if not changed_results and not readme_updated:
+        logger.info("publish_squash_skip_no_changes")
+        return PublishResult(committed=False, pushed=False)
+
+    files_to_add = _collect_files(repo_dir, changed_results, readme_updated)
+
+    message = compose_commit_message(
+        project_name,
+        pipeline_results,
+        publishing_config,
+        readme_updated=readme_updated,
+        force=force,
+        trigger_source=trigger_source,
+        quality_reports=quality_reports,
+    )
+
+    if dry_run:
+        logger.info(
+            "publish_squash_dry_run",
+            files=files_to_add,
+            message_preview=message.split("\n")[0],
+        )
+        return PublishResult(committed=False, pushed=False, files_added=len(files_to_add))
+
+    # ── 1. Create / reset side branch from target ──
+    if await _branch_exists(repo_dir, SQUASH_BRANCH):
+        await run_command("git", "branch", "-D", SQUASH_BRANCH, cwd=repo_dir, timeout=10)
+
+    await run_command("git", "checkout", "-b", SQUASH_BRANCH, cwd=repo_dir, timeout=10)
+
+    # ── 2. Stage + commit on side branch ──
+    await git_add(repo_dir, files_to_add)
+    side_sha = await git_commit(
+        repo_dir,
+        f"phantom: stage screenshots for squash\n\n{message}",
+        publishing_config.commit_author,
+    )
+
+    if side_sha is None:
+        # Nothing changed — go back to target
+        await run_command("git", "checkout", target_branch, cwd=repo_dir, timeout=10)
+        await run_command("git", "branch", "-D", SQUASH_BRANCH, cwd=repo_dir, timeout=10)
+        return PublishResult(committed=False, pushed=False)
+
+    # ── 3. Checkout target ──
+    await run_command("git", "checkout", target_branch, cwd=repo_dir, timeout=10)
+
+    # ── 4. Squash merge ──
+    merge_result = await run_command(
+        "git", "merge", "--squash", SQUASH_BRANCH, cwd=repo_dir, timeout=30
+    )
+    if merge_result.returncode != 0:
+        logger.error("squash_merge_failed", stderr=merge_result.stderr[:500])
+        await run_command("git", "merge", "--abort", cwd=repo_dir, timeout=10)
+        await run_command("git", "branch", "-D", SQUASH_BRANCH, cwd=repo_dir, timeout=10)
+        return PublishResult(
+            committed=False,
+            pushed=False,
+            error=f"squash merge failed: {merge_result.stderr[:200]}",
+        )
+
+    # ── 5. Commit the squash ──
+    sha = await git_commit(repo_dir, message, publishing_config.commit_author)
+
+    # ── 6. Delete side branch ──
+    await run_command("git", "branch", "-D", SQUASH_BRANCH, cwd=repo_dir, timeout=10)
+
+    if sha is None:
+        return PublishResult(committed=False, pushed=False)
+
+    # ── 7. Push ──
+    pushed = False
+    try:
+        await git_push_with_retry(repo_dir, target_branch, max_retries=MAX_PUSH_RETRIES)
+        pushed = True
+    except Exception as e:
+        logger.warning("push_failed", error=str(e))
+        return PublishResult(
+            committed=True,
+            pushed=False,
+            commit_sha=sha,
+            files_added=len(files_to_add),
+            error=str(e),
+        )
+
+    logger.info(
+        "publish_squash_complete",
+        sha=sha,
+        files=len(files_to_add),
+        strategy="squash",
+    )
+    return PublishResult(
+        committed=True, pushed=pushed, commit_sha=sha, files_added=len(files_to_add)
+    )
+
+
+def _collect_files(
+    repo_dir: Path,
+    changed_results: list[PipelineResult],
+    readme_updated: bool,
+) -> list[str]:
+    """Build the list of relative file paths to commit."""
+    files_to_add: list[str] = []
+    for r in changed_results:
+        rel_path = str(r.output_path.relative_to(repo_dir))
+        files_to_add.append(rel_path)
+
+    if readme_updated:
+        for candidate in ("README.md", "readme.md", "README.rst", "README"):
+            if (repo_dir / candidate).exists():
+                files_to_add.append(candidate)
+                break
+    return files_to_add
+
+
 async def publish(
     repo_dir: Path,
     pipeline_results: list[PipelineResult],
@@ -364,8 +522,13 @@ async def publish(
     force: bool = False,
     dry_run: bool = False,
     trigger_source: str | None = None,
+    quality_reports: list[object] | None = None,
 ) -> PublishResult:
     """Execute the full publish workflow: add, commit, push.
+
+    If ``publishing_config.strategy`` is ``"squash"``, delegates to
+    :func:`publish_squash` for a cleaner git history.  Otherwise uses
+    the traditional direct-commit strategy.
 
     Args:
         repo_dir: Path to the git repository root.
@@ -376,30 +539,33 @@ async def publish(
         force: Commit even if all captures are unchanged.
         dry_run: Log what would happen but don't modify git.
         trigger_source: What triggered this run (cli, webhook, schedule).
+        quality_reports: Optional quality checker results for the commit message.
 
     Returns:
         PublishResult with commit details.
     """
-    # Determine which files to commit
+    strategy = getattr(publishing_config, "strategy", "direct")
+    if strategy == "squash":
+        return await publish_squash(
+            repo_dir=repo_dir,
+            pipeline_results=pipeline_results,
+            publishing_config=publishing_config,
+            project_name=project_name,
+            readme_updated=readme_updated,
+            force=force,
+            dry_run=dry_run,
+            trigger_source=trigger_source,
+            quality_reports=quality_reports,
+        )
+
+    # ── Direct strategy (original behaviour) ──
     changed_results = [r for r in pipeline_results if r.changed or force]
 
     if not changed_results and not readme_updated:
         logger.info("publish_skip_no_changes")
         return PublishResult(committed=False, pushed=False)
 
-    # Build file list
-    files_to_add: list[str] = []
-    for r in changed_results:
-        rel_path = str(r.output_path.relative_to(repo_dir))
-        files_to_add.append(rel_path)
-
-    # Include README if updated
-    readme_candidates = ["README.md", "readme.md", "README.rst", "README"]
-    for candidate in readme_candidates:
-        readme_path = repo_dir / candidate
-        if readme_path.exists() and readme_updated:
-            files_to_add.append(candidate)
-            break
+    files_to_add = _collect_files(repo_dir, changed_results, readme_updated)
 
     message = compose_commit_message(
         project_name,
@@ -408,6 +574,7 @@ async def publish(
         readme_updated=readme_updated,
         force=force,
         trigger_source=trigger_source,
+        quality_reports=quality_reports,
     )
 
     if dry_run:

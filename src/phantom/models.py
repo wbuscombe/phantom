@@ -457,7 +457,7 @@ class PublishingConfig(BaseModel):
     commit_author: CommitAuthor = Field(default_factory=CommitAuthor)
     ci_skip_tag: str = "[skip ci]"
     commit_message: str = "docs(screenshots): update via Phantom"
-    strategy: Literal["direct", "pr"] = "direct"
+    strategy: Literal["direct", "pr", "squash"] = "direct"
     readme_update: bool = True
     cleanup_stale: bool = True
 

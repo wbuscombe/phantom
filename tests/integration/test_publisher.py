@@ -13,6 +13,7 @@ from phantom.models import CommitAuthor, PublishingConfig
 from phantom.publisher.git import (
     find_stale_screenshots,
     publish,
+    publish_squash,
     remove_stale_files,
 )
 from phantom.publisher.readme import ReadmeUpdate, update_readme_file
@@ -278,3 +279,113 @@ class TestReadmePublishIntegration:
         )
         assert "README.md" in diff.stdout
         assert "docs/screenshots/dashboard.png" in diff.stdout
+
+
+class TestSquashPublish:
+    @pytest.mark.integration
+    def test_squash_publish_creates_single_commit(self, tmp_path: Path) -> None:
+        """Squash publish should create a single commit on the target branch."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+
+        # Count commits before
+        log_before = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=repo, capture_output=True, text=True,
+        )
+        count_before = int(log_before.stdout.strip())
+
+        # Create screenshot
+        screenshots_dir = repo / "docs" / "screenshots"
+        screenshots_dir.mkdir(parents=True)
+        img = Image.new("RGB", (100, 100), (0, 255, 0))
+        img_path = screenshots_dir / "hero.png"
+        img.save(img_path)
+
+        result = _create_fake_pipeline_result("hero", img_path)
+        config = PublishingConfig(strategy="squash", ci_skip_tag="[skip ci]")
+
+        pub_result = asyncio.get_event_loop().run_until_complete(
+            publish_squash(
+                repo_dir=repo,
+                pipeline_results=[result],
+                publishing_config=config,
+                project_name="test-project",
+            )
+        )
+
+        assert pub_result.committed
+        assert pub_result.commit_sha is not None
+
+        # Should have exactly 1 new commit (the squash)
+        log_after = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=repo, capture_output=True, text=True,
+        )
+        count_after = int(log_after.stdout.strip())
+        assert count_after == count_before + 1
+
+        # Side branch should be cleaned up
+        branches = subprocess.run(
+            ["git", "branch"], cwd=repo, capture_output=True, text=True,
+        )
+        assert "phantom/screenshots" not in branches.stdout
+
+        # Commit message should be descriptive
+        msg = subprocess.run(
+            ["git", "log", "-1", "--format=%B"],
+            cwd=repo, capture_output=True, text=True,
+        )
+        assert "docs(screenshots)" in msg.stdout
+        assert "[phantom]" in msg.stdout
+
+        # File should be in the commit
+        diff = subprocess.run(
+            ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+            cwd=repo, capture_output=True, text=True,
+        )
+        assert "docs/screenshots/hero.png" in diff.stdout
+
+    @pytest.mark.integration
+    def test_squash_publish_no_changes(self, tmp_path: Path) -> None:
+        """Squash publish with no changes should do nothing."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+
+        result = _create_fake_pipeline_result(
+            "unchanged", repo / "screenshot.png", changed=False,
+        )
+        config = PublishingConfig(strategy="squash")
+
+        pub_result = asyncio.get_event_loop().run_until_complete(
+            publish_squash(repo, [result], config, "test")
+        )
+        assert not pub_result.committed
+
+    @pytest.mark.integration
+    def test_squash_via_publish_strategy(self, tmp_path: Path) -> None:
+        """publish() dispatches to squash when strategy='squash'."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+
+        screenshots_dir = repo / "docs" / "screenshots"
+        screenshots_dir.mkdir(parents=True)
+        img_path = screenshots_dir / "test.png"
+        Image.new("RGB", (50, 50)).save(img_path)
+
+        result = _create_fake_pipeline_result("test", img_path)
+        config = PublishingConfig(strategy="squash")
+
+        pub_result = asyncio.get_event_loop().run_until_complete(
+            publish(repo, [result], config, "test")
+        )
+        assert pub_result.committed
+
+        # Verify no side branch remains
+        branches = subprocess.run(
+            ["git", "branch"], cwd=repo, capture_output=True, text=True,
+        )
+        assert "phantom/screenshots" not in branches.stdout

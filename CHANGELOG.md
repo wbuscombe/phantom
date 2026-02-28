@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **LLM provider abstraction** (`providers.py`) with `LLMProvider` protocol, `AnthropicProvider`, and per-model pricing table. Configurable via `PHANTOM_LLM_PROVIDER` and `PHANTOM_LLM_MODEL` env vars.
 - **Screenshot visual review** (`--review` flag) sends captured screenshots to vision API for quality scoring, issue detection, and improvement suggestions. Off by default, $0.30 budget cap.
 - **Rollback mechanism** with `SnapshotManager` for recording pre-publish state. New CLI commands: `phantom snapshots` and `phantom rollback`.
+- **Bot commit squash strategy** (`strategy: squash` in publishing config) commits to a side branch and squash-merges for a cleaner git history — one commit per screenshot update cycle.
 - **Enhanced bot commit messages** with per-capture detail: updated/unchanged lists, quality summary, and capture count in subject line.
 - **Desktop runner deps** in reusable workflow: xdotool and imagemagick added alongside xvfb.
 - **Concurrency groups** for School-Work monorepo screenshot workflows to prevent git push race conditions.
