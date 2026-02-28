@@ -8,9 +8,9 @@ on:
         required: true
         type: string
       phantom-version:
-        description: "Phantom PyPI version constraint (e.g. '>=0.2,<0.3') or git ref (e.g. main)"
+        description: "Phantom PyPI version constraint (e.g. '>=0.3,<0.4') or git ref (e.g. main)"
         required: false
-        default: ">=0.2,<0.3"
+        default: ">=0.3,<0.4"
         type: string
       publish-strategy:
         description: "How to publish screenshots: direct, pr, or artifacts-only"
@@ -71,7 +71,7 @@ jobs:
           fi
           VERSION="${{ inputs.phantom-version }}"
           if [[ "$VERSION" == *">"* || "$VERSION" == *"<"* || "$VERSION" == *"="* ]]; then
-            # Version constraint (e.g. >=0.2,<0.3)
+            # Version constraint (e.g. >=0.3,<0.4)
             pip install "phantom-docs${AI_EXTRA}${VERSION}"
           elif [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
             # Exact version (e.g. 0.2.0)
