@@ -84,10 +84,12 @@ phantom run -p .
 
 The fastest way to set up Phantom for an existing project is with [Claude Code](https://claude.ai/claude-code). Copy the [onboarding prompt](docs/onboarding-prompt.md) into Claude Code while in your project's root directory — it will analyze your codebase and generate everything Phantom needs:
 
-- Demo mode with realistic fixture data
-- `.phantom.yml` manifest with 5-8 captures
+- Framework-specific demo mode playbooks (Flask, React, SDL2, Java Swing, TUI)
+- `.phantom.yml` manifest with progressive verification at every stage
 - GitHub Actions workflow for automated updates
 - README sentinels for screenshot placement
+- Action timing rules and screenshot quality checks
+- Desktop Runner support for native GUI apps
 
 ```bash
 # From your project directory:
