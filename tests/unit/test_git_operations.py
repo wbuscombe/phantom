@@ -36,11 +36,9 @@ class TestComposeCommitMessage:
         config = PublishingConfig()
         msg = compose_commit_message("my-project", results, config)
 
-        assert "docs(screenshots): update via Phantom" in msg
-        assert "Project: my-project" in msg
-        assert "Changed: 1" in msg
-        assert "Unchanged: 1" in msg
-        assert "Total: 2" in msg
+        assert "docs(screenshots): update 1 of 2 captures [phantom]" in msg
+        assert "Updated: dashboard (new)" in msg
+        assert "Unchanged: settings" in msg
         assert "[skip ci]" in msg
 
     def test_custom_ci_skip_tag(self) -> None:
@@ -100,8 +98,8 @@ class TestComposeCommitMessage:
         ]
         config = PublishingConfig()
         msg = compose_commit_message("test", results, config)
-        assert "Changed: 0" in msg
-        assert "Unchanged: 2" in msg
+        assert "no changes [phantom]" in msg
+        assert "Unchanged: a, b" in msg
 
 
 class TestGitAdd:

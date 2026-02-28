@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -23,6 +22,7 @@ from phantom.analyst.prompts import (
     build_system_prompt,
     build_user_prompt,
 )
+from phantom.analyst.providers import AnthropicProvider, get_provider
 from phantom.analyst.state import AnalystStateManager
 from phantom.exceptions import AnalystDependencyError as AnalystDependencyError  # re-export
 from phantom.exceptions import PhantomError
@@ -44,22 +44,6 @@ class AnalystError(PhantomError):
         super().__init__(message)
 
 
-def _get_anthropic_client(api_key: str | None = None) -> Any:
-    """Get an Anthropic client, raising a clear error if not installed."""
-    try:
-        import anthropic
-    except ImportError:
-        raise AnalystDependencyError from None
-
-    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        raise AnalystError(
-            "No API key provided. Set ANTHROPIC_API_KEY environment variable "
-            "or pass api_key to ProjectAnalyzer."
-        )
-    return anthropic.Anthropic(api_key=key)
-
-
 class ProjectAnalyzer:
     """Analyzes a project and generates a Phantom manifest."""
 
@@ -68,16 +52,17 @@ class ProjectAnalyzer:
         api_key: str | None = None,
         model: str = "claude-sonnet-4-20250514",
         cost_tracker: CostTracker | None = None,
+        provider: AnthropicProvider | None = None,
     ) -> None:
         self.api_key = api_key
         self.model = model
-        self.cost_tracker = cost_tracker or CostTracker()
-        self._client: Any = None
+        self.cost_tracker = cost_tracker or CostTracker(model=model)
+        self._provider = provider
 
-    def _ensure_client(self) -> Any:
-        if self._client is None:
-            self._client = _get_anthropic_client(self.api_key)
-        return self._client
+    def _ensure_provider(self) -> AnthropicProvider:
+        if self._provider is None:
+            self._provider = get_provider(api_key=self.api_key, model=self.model)
+        return self._provider
 
     async def detect_project_type(self, project_dir: Path) -> str:
         """Detect project type from file signatures. No API call needed."""
@@ -111,7 +96,7 @@ class ProjectAnalyzer:
 
     async def analyze(self, project_dir: Path) -> AnalysisPlan:
         """Full analysis pipeline — returns a structured plan."""
-        client = self._ensure_client()
+        provider = self._ensure_provider()
 
         # 1. Detect project type
         project_type = await self.detect_project_type(project_dir)
@@ -143,24 +128,23 @@ class ProjectAnalyzer:
         output_estimate = 4096  # max_tokens we'll request
         self.cost_tracker.require_budget(input_estimate, output_estimate)
 
-        # 6. Call Claude API
-        logger.info("analyst_api_call", model=self.model, input_estimate=input_estimate)
+        # 6. Call LLM via provider
+        logger.info("analyst_api_call", model=provider.model, input_estimate=input_estimate)
 
-        response = client.messages.create(
-            model=self.model,
-            max_tokens=4096,
+        response = await provider.complete(
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
+            max_tokens=4096,
         )
 
         # Record actual usage
         self.cost_tracker.record_usage(
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
         )
 
         # 7. Parse response
-        raw_text = response.content[0].text
+        raw_text = response.content
         plan = self._parse_response(raw_text)
 
         if plan is None:
@@ -168,9 +152,7 @@ class ProjectAnalyzer:
             logger.warning("analyst_parse_failed_retrying")
             self.cost_tracker.require_budget(input_estimate // 2, output_estimate)
 
-            retry_response = client.messages.create(
-                model=self.model,
-                max_tokens=4096,
+            retry_response = await provider.complete(
                 system=system_prompt,
                 messages=[
                     {"role": "user", "content": user_prompt},
@@ -184,13 +166,14 @@ class ProjectAnalyzer:
                         ),
                     },
                 ],
+                max_tokens=4096,
             )
             self.cost_tracker.record_usage(
-                input_tokens=retry_response.usage.input_tokens,
-                output_tokens=retry_response.usage.output_tokens,
+                input_tokens=retry_response.input_tokens,
+                output_tokens=retry_response.output_tokens,
             )
 
-            retry_text = retry_response.content[0].text
+            retry_text = retry_response.content
             plan = self._parse_response(retry_text)
 
             if plan is None:
@@ -547,7 +530,7 @@ class ProjectAnalyzer:
             diff_result.reason = "Previous manifest invalid, fell back to full"
             return plan, diff_result
 
-        client = self._ensure_client()
+        provider = self._ensure_provider()
 
         # Build incremental prompt
         system_prompt = build_incremental_system_prompt(project_type)
@@ -564,24 +547,23 @@ class ProjectAnalyzer:
 
         logger.info(
             "incremental_api_call",
-            model=self.model,
+            model=provider.model,
             input_estimate=input_estimate,
             affected_captures=diff_result.affected_capture_ids,
         )
 
-        response = client.messages.create(
-            model=self.model,
-            max_tokens=2048,
+        response = await provider.complete(
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
+            max_tokens=2048,
         )
 
         self.cost_tracker.record_usage(
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
         )
 
-        raw_text = response.content[0].text
+        raw_text = response.content
         incremental_plan = self._parse_response(raw_text)
 
         if incremental_plan is None:

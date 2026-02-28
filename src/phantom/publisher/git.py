@@ -55,29 +55,36 @@ def compose_commit_message(
     readme_updated: bool = False,
     force: bool = False,
     trigger_source: str | None = None,
+    quality_reports: list[object] | None = None,
 ) -> str:
     """Build a descriptive commit message.
 
     Format:
-        docs(screenshots): update via Phantom [skip ci]
+        docs(screenshots): update 3 of 5 captures [phantom] [skip ci]
 
-        Project: my-project
-        Changed: 3 | Unchanged: 2 | Failed: 0 | Total: 5
-        Phantom: v0.1.0
-        Trigger: cli
-
-        Changed captures:
-          - dashboard (5.2% diff)
-          - settings (new)
-
-        [skip ci]
+        Updated: dashboard, settings, inbox
+        Unchanged: main-menu, profile
+        Quality: all passed (avg entropy: 7.2)
+        Phantom: v0.2.0
     """
     changed = [r for r in pipeline_results if r.changed]
     unchanged = [r for r in pipeline_results if not r.changed]
-    # Failed captures aren't in pipeline_results (they're filtered out earlier)
+    total = len(pipeline_results)
 
-    # Use custom message template or default
-    subject = publishing_config.commit_message
+    # Use custom commit message if provided, otherwise generate one
+    custom = publishing_config.commit_message
+    default_msg = "docs(screenshots): update via Phantom"
+    if custom and custom != default_msg:
+        subject = custom
+    else:
+        # Build subject line with counts
+        changed_count = len(changed)
+        if changed_count == total and total > 0:
+            subject = f"docs(screenshots): update {total} captures [phantom]"
+        elif changed_count > 0:
+            subject = f"docs(screenshots): update {changed_count} of {total} captures [phantom]"
+        else:
+            subject = "docs(screenshots): no changes [phantom]"
 
     # Append CI skip tag to subject line
     ci_tag = publishing_config.ci_skip_tag
@@ -85,38 +92,41 @@ def compose_commit_message(
         subject = f"{subject} {ci_tag}"
 
     lines = [subject, ""]
-    lines.append(f"Project: {project_name}")
-    lines.append(
-        f"Changed: {len(changed)} | Unchanged: {len(unchanged)} | Total: {len(pipeline_results)}"
-    )
-    lines.append(f"Phantom: v{__version__}")
-    if trigger_source:
-        lines.append(f"Trigger: {trigger_source}")
 
-    # Diff details for changed captures
+    # Updated captures (inline list)
     if changed:
-        lines.append("")
-        lines.append("Changed captures:")
+        updated_ids = []
         for r in changed:
             diff_info = r.stage_results.get("diff")
             if diff_info and diff_info.metadata:
                 pct = diff_info.metadata.get("diff_pct", "?")
-                lines.append(f"  - {r.capture_id} ({pct}% diff)")
+                updated_ids.append(f"{r.capture_id} ({pct}% diff)")
             else:
-                lines.append(f"  - {r.capture_id} (new)")
+                updated_ids.append(f"{r.capture_id} (new)")
+        lines.append(f"Updated: {', '.join(updated_ids)}")
 
+    # Unchanged captures (inline list)
     if unchanged:
-        lines.append("")
-        lines.append("Unchanged captures:")
-        for r in unchanged:
-            lines.append(f"  - {r.capture_id}")
+        unchanged_ids = [r.capture_id for r in unchanged]
+        lines.append(f"Unchanged: {', '.join(unchanged_ids)}")
+
+    # Quality summary
+    if quality_reports:
+        passed = sum(1 for qr in quality_reports if getattr(qr, "passed", True))
+        total_q = len(quality_reports)
+        if passed == total_q:
+            lines.append(f"Quality: all passed ({total_q} checked)")
+        else:
+            lines.append(f"Quality: {passed}/{total_q} passed")
+
+    lines.append(f"Phantom: v{__version__}")
+    if trigger_source:
+        lines.append(f"Trigger: {trigger_source}")
 
     if readme_updated:
-        lines.append("")
         lines.append("README sentinels updated.")
 
     if force:
-        lines.append("")
         lines.append("Force mode: committed regardless of diff threshold.")
 
     return "\n".join(lines)

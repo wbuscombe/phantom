@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from phantom.analyst.analyzer import ProjectAnalyzer
 from phantom.analyst.models import AnalysisPlan
+from phantom.analyst.providers import LLMResponse
 from phantom.analyst.state import AnalystStateManager
 
 if TYPE_CHECKING:
@@ -42,6 +43,20 @@ def _make_plan() -> AnalysisPlan:
     )
 
 
+def _make_mock_provider(plan_json: str) -> MagicMock:
+    """Create a mock provider that returns the given plan JSON."""
+    mock_provider = MagicMock()
+    mock_provider.model = "claude-sonnet-4-20250514"
+    mock_provider.complete = AsyncMock(return_value=LLMResponse(
+        content=plan_json,
+        input_tokens=3000,
+        output_tokens=1500,
+        model="claude-sonnet-4-20250514",
+        cost_usd=0.01,
+    ))
+    return mock_provider
+
+
 def _setup_state(project_dir: Path, manifest_yaml: str) -> None:
     """Write a state file with a previous analysis."""
     mgr = AnalystStateManager(project_dir)
@@ -59,9 +74,8 @@ def _setup_state(project_dir: Path, manifest_yaml: str) -> None:
 class TestAnalyzeIncremental:
     @pytest.mark.asyncio
     @patch("phantom.analyst.diff.subprocess.run")
-    @patch("phantom.analyst.analyzer._get_anthropic_client")
     async def test_no_state_runs_full(
-        self, mock_client: MagicMock, mock_git: MagicMock, tmp_path: Path
+        self, mock_git: MagicMock, tmp_path: Path
     ) -> None:
         """Without prior state, should run full analysis."""
         plan = _make_plan()
@@ -70,15 +84,8 @@ class TestAnalyzeIncremental:
         # Mock git
         mock_git.return_value = MagicMock(returncode=0, stdout="def456\n")
 
-        # Mock API response
-        client = MagicMock()
-        mock_client.return_value = client
-        response = MagicMock()
-        response.content = [MagicMock(text=plan_json)]
-        response.usage = MagicMock(input_tokens=3000, output_tokens=1500)
-        client.messages.create.return_value = response
-
-        analyzer = ProjectAnalyzer()
+        mock_provider = _make_mock_provider(plan_json)
+        analyzer = ProjectAnalyzer(provider=mock_provider)
 
         # Create a pyproject.toml so detect_project_type works
         (tmp_path / "package.json").write_text("{}")
@@ -126,17 +133,9 @@ class TestAnalyzeIncremental:
             MagicMock(returncode=0, stdout="abc123def456\n"),  # head_sha in analyze
         ]
 
-        # Need to mock API for full analysis
-        with patch("phantom.analyst.analyzer._get_anthropic_client") as mock_client:
-            client = MagicMock()
-            mock_client.return_value = client
-            response = MagicMock()
-            response.content = [MagicMock(text=plan.model_dump_json())]
-            response.usage = MagicMock(input_tokens=3000, output_tokens=1500)
-            client.messages.create.return_value = response
-
-            analyzer = ProjectAnalyzer()
-            _plan, diff_result = await analyzer.analyze_incremental(tmp_path, force_full=True)
+        mock_provider = _make_mock_provider(plan.model_dump_json())
+        analyzer = ProjectAnalyzer(provider=mock_provider)
+        _plan, diff_result = await analyzer.analyze_incremental(tmp_path, force_full=True)
 
         assert diff_result.recommendation == "full"
         assert "Forced" in diff_result.reason
@@ -158,16 +157,9 @@ class TestAnalyzeIncremental:
             MagicMock(returncode=0, stdout="new_sha_456\n"),  # head_sha in full analyze
         ]
 
-        with patch("phantom.analyst.analyzer._get_anthropic_client") as mock_client:
-            client = MagicMock()
-            mock_client.return_value = client
-            response = MagicMock()
-            response.content = [MagicMock(text=plan_obj.model_dump_json())]
-            response.usage = MagicMock(input_tokens=3000, output_tokens=1500)
-            client.messages.create.return_value = response
-
-            analyzer = ProjectAnalyzer()
-            _plan, diff_result = await analyzer.analyze_incremental(tmp_path)
+        mock_provider = _make_mock_provider(plan_obj.model_dump_json())
+        analyzer = ProjectAnalyzer(provider=mock_provider)
+        _plan, diff_result = await analyzer.analyze_incremental(tmp_path)
 
         assert diff_result.recommendation == "full"
 

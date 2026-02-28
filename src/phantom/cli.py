@@ -96,6 +96,7 @@ def validate(manifest_path: str) -> None:
     "--ai-auto", is_flag=True, help="Full autonomous pipeline: AI analyze + capture + document."
 )
 @click.option("--full", is_flag=True, help="Force full AI analysis (ignore incremental state).")
+@click.option("--review", is_flag=True, help="Send screenshots to vision API for quality review.")
 @click.option("--verbose", "-v", is_flag=True, help="Enable debug logging.")
 def run(
     project: str,
@@ -110,6 +111,7 @@ def run(
     ai_document: bool,
     ai_auto: bool,
     full: bool,
+    review: bool,
     verbose: bool,
 ) -> None:
     """Run screenshot captures for a project."""
@@ -249,6 +251,10 @@ def run(
     # Print report
     _print_report(report, elapsed)
 
+    # Visual review step (opt-in)
+    if review and not report.error and report.captures_succeeded > 0:
+        _run_visual_review(project_path, report, m, verbose)
+
     # AI Documentation step (post-capture)
     if ai_document and not report.error:
         _run_ai_document(project_path, plan if ai_analyst else None, m, verbose)
@@ -296,6 +302,56 @@ def _print_report(report: JobReport, elapsed: float) -> None:
         lines.append(f"\n[red]Error:[/red] {report.error}")
 
     output.print(Panel("\n".join(lines), title="Phantom Run Report", border_style=status_color))
+
+
+def _run_visual_review(
+    project_path: Path,
+    report: JobReport,
+    manifest: object,
+    verbose: bool,
+) -> None:
+    """Send captured screenshots to vision API for quality review."""
+    from phantom.analyst.reviewer import ScreenshotReviewer
+
+    console.print("\n[cyan]Running visual quality review...[/cyan]")
+
+    screenshots: dict[str, Path] = {}
+    descriptions: dict[str, str] = {}
+    for cap in manifest.captures:  # type: ignore[attr-defined]
+        output_path = project_path / cap.output
+        if output_path.exists():
+            screenshots[cap.id] = output_path
+            descriptions[cap.id] = cap.name
+
+    if not screenshots:
+        console.print("[yellow]No screenshots found to review.[/yellow]")
+        return
+
+    console.print(f"  Screenshots: {len(screenshots)}")
+
+    try:
+        reviewer = ScreenshotReviewer()
+        review_report = asyncio.get_event_loop().run_until_complete(
+            reviewer.review(screenshots, descriptions)
+        )
+
+        console.print(f"  Overall score: {review_report.overall_score:.1f}")
+        console.print(f"  Summary: {review_report.summary}")
+
+        if verbose:
+            for rev in review_report.reviews:
+                status = "[green]OK[/green]" if rev.score >= 0.7 else "[red]LOW[/red]"
+                console.print(f"    {rev.capture_id}: {rev.score:.1f} {status}")
+                for issue in rev.issues:
+                    console.print(f"      [yellow]Issue:[/yellow] {issue}")
+                for suggestion in rev.suggestions:
+                    console.print(f"      [dim]Suggestion:[/dim] {suggestion}")
+
+        if review_report.cost_usd > 0:
+            console.print(f"  [dim]Review cost: ${review_report.cost_usd:.4f}[/dim]")
+
+    except Exception as e:
+        console.print(f"[yellow]Review failed:[/yellow] {e}")
 
 
 def _run_ai_document(
@@ -1199,3 +1255,65 @@ def costs(project: str | None, directory: tuple[str, ...]) -> None:
         "Detailed per-call token costs are shown in 'phantom analyze --verbose' "
         "output.[/dim]"
     )
+
+
+@main.command()
+@click.option("--dir", "directory", default=".", help="Project directory.")
+def snapshots(directory: str) -> None:
+    """List recent screenshot snapshots for rollback."""
+    from datetime import datetime
+
+    from phantom.conductor.snapshots import SnapshotManager
+
+    project_dir = Path(directory).resolve()
+    output.print(f"[bold]Phantom v{__version__}[/bold] — snapshots")
+    output.print(f"  Project: {project_dir}")
+    output.print()
+
+    mgr = SnapshotManager(project_dir)
+    snaps = mgr.list_snapshots()
+
+    if not snaps:
+        output.print("[dim]No snapshots found.[/dim]")
+        return
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("ID")
+    table.add_column("Time")
+    table.add_column("Commit")
+    table.add_column("Files")
+
+    for s in reversed(snaps):
+        dt = datetime.fromtimestamp(s.timestamp)
+        time_str = dt.strftime("%Y-%m-%d %H:%M")
+        commit_str = s.commit_sha[:8] if s.commit_sha else "-"
+        table.add_row(s.id, time_str, commit_str, str(s.capture_count))
+
+    output.print(table)
+
+
+@main.command()
+@click.option("--dir", "directory", default=".", help="Project directory.")
+@click.option("--snapshot", "snapshot_id", default=None, help="Snapshot ID to restore.")
+@click.option("--latest", is_flag=True, help="Restore the most recent snapshot.")
+def rollback(directory: str, snapshot_id: str | None, latest: bool) -> None:
+    """Rollback screenshots to a previous snapshot."""
+    from phantom.conductor.snapshots import SnapshotManager
+
+    project_dir = Path(directory).resolve()
+    output.print(f"[bold]Phantom v{__version__}[/bold] — rollback")
+    output.print(f"  Project: {project_dir}")
+
+    if not snapshot_id and not latest:
+        console.print("[red]Error:[/red] Specify --snapshot <id> or --latest")
+        raise SystemExit(1)
+
+    mgr = SnapshotManager(project_dir)
+    target = None if latest else snapshot_id
+
+    success = asyncio.get_event_loop().run_until_complete(mgr.rollback(target))
+    if success:
+        output.print("[green]Rollback complete.[/green]")
+    else:
+        console.print("[red]Rollback failed.[/red]")
+        raise SystemExit(1)

@@ -110,7 +110,7 @@ class TestPublishIntegration:
             text=True,
         )
         assert "docs(screenshots)" in log.stdout
-        assert "test-project" in log.stdout
+        assert "[phantom]" in log.stdout
         assert "[skip ci]" in log.stdout
 
     @pytest.mark.integration

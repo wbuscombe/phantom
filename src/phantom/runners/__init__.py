@@ -58,6 +58,10 @@ def _register_builtins() -> None:
 
     register_runner("docker-compose", DockerRunner)
 
+    from phantom.runners.desktop import DesktopRunner
+
+    register_runner("desktop", DesktopRunner)
+
 
 def _discover_plugins() -> None:
     """Discover external runner plugins via entry points."""

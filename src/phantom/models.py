@@ -521,9 +521,12 @@ class DesktopConfig(BaseModel):
     display: DisplayConfig = Field(default_factory=DisplayConfig)
     window_manager: Literal["openbox", "fluxbox", "none"] = "openbox"
     window_manager_theme: str = "Nightmare"
-    screenshot_method: Literal["maim", "scrot", "xdotool"] = "maim"
+    screenshot_method: Literal["maim", "scrot", "xdotool", "import"] = "import"
     screenshot_target: Literal["window", "screen", "region"] = "window"
     webview_debug_port: int | None = None
+    window_title: str | None = None
+    window_class: str | None = None
+    startup_wait_ms: int = Field(default=3000, ge=0)
 
 
 # ── AI Director ───────────────────────────────────────

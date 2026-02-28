@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-28
+
+### Added
+
+- **Desktop Runner** for native GUI apps (SDL2, Swing, Qt, GTK) via Xvfb + xdotool + ImageMagick. Supports click, keystroke, type, drag, wait, and raw xdotool actions.
+- **LLM provider abstraction** (`providers.py`) with `LLMProvider` protocol, `AnthropicProvider`, and per-model pricing table. Configurable via `PHANTOM_LLM_PROVIDER` and `PHANTOM_LLM_MODEL` env vars.
+- **Screenshot visual review** (`--review` flag) sends captured screenshots to vision API for quality scoring, issue detection, and improvement suggestions. Off by default, $0.30 budget cap.
+- **Rollback mechanism** with `SnapshotManager` for recording pre-publish state. New CLI commands: `phantom snapshots` and `phantom rollback`.
+- **Enhanced bot commit messages** with per-capture detail: updated/unchanged lists, quality summary, and capture count in subject line.
+- **Desktop runner deps** in reusable workflow: xdotool and imagemagick added alongside xvfb.
+- **Concurrency groups** for School-Work monorepo screenshot workflows to prevent git push race conditions.
+- **Version range pinning** for consumer workflows (`>=0.2,<0.3` instead of exact pins).
+- **`DesktopConfig` extensions**: `window_title`, `window_class`, `startup_wait_ms` fields; `import` as default screenshot method.
+
+### Changed
+
+- **Analyzer** refactored to use `LLMProvider` protocol instead of direct Anthropic SDK coupling.
+- **CostTracker** now accepts a `model` parameter and uses per-model pricing from `MODEL_PRICING` table instead of hardcoded Sonnet pricing.
+- **Reusable workflow** (`phantom-capture.yml`) default version changed from exact `0.2.0` to range `>=0.2,<0.3` with smarter install logic supporting version constraints, exact versions, and git refs.
+
 ## [0.2.0] - 2026-02-20
 
 ### Added
@@ -57,5 +77,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Auto-detection** in `phantom init` for project type based on marker files (package.json, Cargo.toml, docker-compose.yml, etc.).
 - **246+ unit and integration tests** covering models, runners, darkroom, publisher, orchestrator, CLI, webhooks, queue, scheduler, and state management.
 
+[0.3.0]: https://github.com/wbuscombe/phantom/releases/tag/v0.3.0
 [0.2.0]: https://github.com/wbuscombe/phantom/releases/tag/v0.2.0
 [0.1.0]: https://github.com/wbuscombe/phantom/releases/tag/v0.1.0

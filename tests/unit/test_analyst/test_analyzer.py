@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import TYPE_CHECKING, Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from phantom.analyst.analyzer import AnalystDependencyError, AnalystError, ProjectAnalyzer
 from phantom.analyst.costs import AnalystBudgetExceeded, CostTracker
 from phantom.analyst.models import AnalysisPlan
+from phantom.analyst.providers import LLMResponse
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -86,16 +88,15 @@ _MOCK_PLAN_JSON = {
 }
 
 
-def _make_mock_response(text: str, input_tokens: int = 1000, output_tokens: int = 500) -> Any:
-    """Create a mock Anthropic API response."""
-    mock = MagicMock()
-    content_block = MagicMock()
-    content_block.text = text
-    mock.content = [content_block]
-    mock.usage = MagicMock()
-    mock.usage.input_tokens = input_tokens
-    mock.usage.output_tokens = output_tokens
-    return mock
+def _make_mock_response(text: str, input_tokens: int = 1000, output_tokens: int = 500) -> LLMResponse:
+    """Create a mock LLMResponse."""
+    return LLMResponse(
+        content=text,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        model="claude-sonnet-4-20250514",
+        cost_usd=0.01,
+    )
 
 
 @pytest.fixture()
@@ -148,17 +149,14 @@ class TestProjectDetection:
 
 
 class TestAnalyze:
-    @patch("phantom.analyst.analyzer._get_anthropic_client")
-    async def test_valid_response_produces_plan(
-        self, mock_get_client: MagicMock, tui_project: Path
-    ) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _make_mock_response(
+    async def test_valid_response_produces_plan(self, tui_project: Path) -> None:
+        mock_provider = MagicMock()
+        mock_provider.model = "claude-sonnet-4-20250514"
+        mock_provider.complete = AsyncMock(return_value=_make_mock_response(
             json.dumps(_MOCK_PLAN_JSON), input_tokens=15000, output_tokens=2000
-        )
-        mock_get_client.return_value = mock_client
+        ))
 
-        analyzer = ProjectAnalyzer(api_key="test-key")
+        analyzer = ProjectAnalyzer(api_key="test-key", provider=mock_provider)
         plan = await analyzer.analyze(tui_project)
 
         assert isinstance(plan, AnalysisPlan)
@@ -166,74 +164,62 @@ class TestAnalyze:
         assert len(plan.captures) == 2
         assert plan.captures[0].id == "main-menu"
 
-    @patch("phantom.analyst.analyzer._get_anthropic_client")
-    async def test_invalid_json_retries(
-        self, mock_get_client: MagicMock, tui_project: Path
-    ) -> None:
-        mock_client = MagicMock()
+    async def test_invalid_json_retries(self, tui_project: Path) -> None:
+        mock_provider = MagicMock()
+        mock_provider.model = "claude-sonnet-4-20250514"
         # First call returns invalid JSON, second returns valid
-        mock_client.messages.create.side_effect = [
+        mock_provider.complete = AsyncMock(side_effect=[
             _make_mock_response("This is not valid JSON at all"),
             _make_mock_response(json.dumps(_MOCK_PLAN_JSON)),
-        ]
-        mock_get_client.return_value = mock_client
+        ])
 
-        analyzer = ProjectAnalyzer(api_key="test-key")
+        analyzer = ProjectAnalyzer(api_key="test-key", provider=mock_provider)
         plan = await analyzer.analyze(tui_project)
 
         assert isinstance(plan, AnalysisPlan)
-        assert mock_client.messages.create.call_count == 2
+        assert mock_provider.complete.call_count == 2
 
-    @patch("phantom.analyst.analyzer._get_anthropic_client")
-    async def test_invalid_json_twice_raises(
-        self, mock_get_client: MagicMock, tui_project: Path
-    ) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _make_mock_response("not json")
-        mock_get_client.return_value = mock_client
+    async def test_invalid_json_twice_raises(self, tui_project: Path) -> None:
+        mock_provider = MagicMock()
+        mock_provider.model = "claude-sonnet-4-20250514"
+        mock_provider.complete = AsyncMock(return_value=_make_mock_response("not json"))
 
-        analyzer = ProjectAnalyzer(api_key="test-key")
+        analyzer = ProjectAnalyzer(api_key="test-key", provider=mock_provider)
         with pytest.raises(AnalystError, match="Failed to parse"):
             await analyzer.analyze(tui_project)
 
-    @patch("phantom.analyst.analyzer._get_anthropic_client")
-    async def test_budget_exceeded_before_call(
-        self, mock_get_client: MagicMock, tui_project: Path
-    ) -> None:
-        mock_get_client.return_value = MagicMock()
+    async def test_budget_exceeded_before_call(self, tui_project: Path) -> None:
+        mock_provider = MagicMock()
+        mock_provider.model = "claude-sonnet-4-20250514"
         tracker = CostTracker(max_input_tokens=100)  # Tiny budget
 
-        analyzer = ProjectAnalyzer(api_key="test-key", cost_tracker=tracker)
+        analyzer = ProjectAnalyzer(api_key="test-key", cost_tracker=tracker, provider=mock_provider)
         with pytest.raises(AnalystBudgetExceeded):
             await analyzer.analyze(tui_project)
 
-    @patch("phantom.analyst.analyzer._get_anthropic_client")
-    async def test_records_usage(self, mock_get_client: MagicMock, tui_project: Path) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _make_mock_response(
+    async def test_records_usage(self, tui_project: Path) -> None:
+        mock_provider = MagicMock()
+        mock_provider.model = "claude-sonnet-4-20250514"
+        mock_provider.complete = AsyncMock(return_value=_make_mock_response(
             json.dumps(_MOCK_PLAN_JSON), input_tokens=18000, output_tokens=2500
-        )
-        mock_get_client.return_value = mock_client
+        ))
 
         tracker = CostTracker()
-        analyzer = ProjectAnalyzer(api_key="test-key", cost_tracker=tracker)
+        analyzer = ProjectAnalyzer(api_key="test-key", cost_tracker=tracker, provider=mock_provider)
         await analyzer.analyze(tui_project)
 
         assert tracker.total_input_tokens == 18000
         assert tracker.total_output_tokens == 2500
         assert tracker.call_count == 1
 
-    @patch("phantom.analyst.analyzer._get_anthropic_client")
-    async def test_handles_code_fenced_response(
-        self, mock_get_client: MagicMock, tui_project: Path
-    ) -> None:
-        mock_client = MagicMock()
+    async def test_handles_code_fenced_response(self, tui_project: Path) -> None:
+        mock_provider = MagicMock()
+        mock_provider.model = "claude-sonnet-4-20250514"
         # Claude sometimes wraps JSON in code fences despite instructions
         fenced = f"```json\n{json.dumps(_MOCK_PLAN_JSON)}\n```"
-        mock_client.messages.create.return_value = _make_mock_response(fenced)
-        mock_get_client.return_value = mock_client
+        mock_provider.complete = AsyncMock(return_value=_make_mock_response(fenced))
 
-        analyzer = ProjectAnalyzer(api_key="test-key")
+        analyzer = ProjectAnalyzer(api_key="test-key", provider=mock_provider)
         plan = await analyzer.analyze(tui_project)
         assert isinstance(plan, AnalysisPlan)
 
@@ -250,11 +236,17 @@ class TestMissingDependency:
             assert "anthropic" in str(err)
 
     def test_missing_api_key(self) -> None:
-        with patch("phantom.analyst.analyzer._get_anthropic_client") as mock:
-            mock.side_effect = AnalystError("No API key provided")
-            analyzer = ProjectAnalyzer()
-            with pytest.raises(AnalystError, match="API key"):
-                analyzer._ensure_client()
+        from phantom.exceptions import PhantomError
+
+        with patch.dict(os.environ, {}, clear=False):
+            # Remove ANTHROPIC_API_KEY if set
+            env = os.environ.copy()
+            env.pop("ANTHROPIC_API_KEY", None)
+            with patch.dict(os.environ, env, clear=True):
+                from phantom.analyst.providers import AnthropicProvider
+                provider = AnthropicProvider(api_key=None)
+                with pytest.raises(PhantomError, match="API key"):
+                    provider._ensure_client()
 
 
 class TestManifestGeneration:

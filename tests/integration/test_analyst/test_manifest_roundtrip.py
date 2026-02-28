@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from typing import TYPE_CHECKING
 
 import pytest
@@ -80,9 +81,15 @@ class TestManifestRoundtrip:
         manifest_path = tmp_path / ".phantom.yml"
         manifest_path.write_text(yaml_str)
 
-        # Run phantom validate
+        # Run phantom validate using the entry point from the same venv
+        import shutil
+        from pathlib import Path as P
+
+        phantom_bin = shutil.which("phantom") or str(
+            P(sys.executable).parent / "phantom"
+        )
         result = subprocess.run(
-            ["phantom", "validate", str(manifest_path)],
+            [phantom_bin, "validate", str(manifest_path)],
             capture_output=True,
             text=True,
             timeout=30,

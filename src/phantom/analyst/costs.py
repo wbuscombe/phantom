@@ -6,9 +6,23 @@ from dataclasses import dataclass, field
 
 from phantom.exceptions import PhantomError
 
-# Claude Sonnet pricing (per million tokens)
-_INPUT_COST_PER_MTOK = 3.0
-_OUTPUT_COST_PER_MTOK = 15.0
+# Per-million-token pricing: model -> (input, output)
+# Canonical source: phantom.analyst.providers.MODEL_PRICING
+# Duplicated here to avoid circular imports; kept in sync.
+MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "claude-sonnet-4-20250514": (3.0, 15.0),
+    "claude-haiku-4-5-20251001": (1.0, 5.0),
+    "claude-opus-4-5-20251101": (5.0, 25.0),
+    "claude-3-5-sonnet-20241022": (3.0, 15.0),
+    "claude-3-5-haiku-20241022": (1.0, 5.0),
+}
+
+DEFAULT_MODEL = "claude-sonnet-4-20250514"
+
+
+def _pricing_for(model: str) -> tuple[float, float]:
+    """Return (input_per_mtok, output_per_mtok) for *model*."""
+    return MODEL_PRICING.get(model, MODEL_PRICING[DEFAULT_MODEL])
 
 
 class AnalystBudgetExceeded(PhantomError):  # noqa: N818
@@ -23,6 +37,7 @@ class AnalystBudgetExceeded(PhantomError):  # noqa: N818
 class CostTracker:
     """Tracks API token usage and enforces budget limits."""
 
+    model: str = DEFAULT_MODEL
     max_input_tokens: int = 50_000
     max_output_tokens: int = 10_000
     max_cost_usd: float = 0.50
@@ -34,8 +49,9 @@ class CostTracker:
     @property
     def estimated_cost_usd(self) -> float:
         """Calculate the estimated cost so far."""
-        input_cost = (self.total_input_tokens / 1_000_000) * _INPUT_COST_PER_MTOK
-        output_cost = (self.total_output_tokens / 1_000_000) * _OUTPUT_COST_PER_MTOK
+        input_per_mtok, output_per_mtok = _pricing_for(self.model)
+        input_cost = (self.total_input_tokens / 1_000_000) * input_per_mtok
+        output_cost = (self.total_output_tokens / 1_000_000) * output_per_mtok
         return input_cost + output_cost
 
     @property
@@ -60,12 +76,11 @@ class CostTracker:
         if self.total_output_tokens + estimated_output > self.max_output_tokens:
             return False
         # Estimate cost of the new call
-        new_input_cost = (
-            (self.total_input_tokens + estimated_input) / 1_000_000
-        ) * _INPUT_COST_PER_MTOK
+        input_per_mtok, output_per_mtok = _pricing_for(self.model)
+        new_input_cost = ((self.total_input_tokens + estimated_input) / 1_000_000) * input_per_mtok
         new_output_cost = (
             (self.total_output_tokens + estimated_output) / 1_000_000
-        ) * _OUTPUT_COST_PER_MTOK
+        ) * output_per_mtok
         return not new_input_cost + new_output_cost > self.max_cost_usd
 
     def require_budget(self, estimated_input: int = 0, estimated_output: int = 0) -> None:
@@ -80,12 +95,11 @@ class CostTracker:
                 f"Output tokens would reach {self.total_output_tokens + estimated_output}, "
                 f"limit is {self.max_output_tokens}"
             )
-        new_input_cost = (
-            (self.total_input_tokens + estimated_input) / 1_000_000
-        ) * _INPUT_COST_PER_MTOK
+        input_per_mtok, output_per_mtok = _pricing_for(self.model)
+        new_input_cost = ((self.total_input_tokens + estimated_input) / 1_000_000) * input_per_mtok
         new_output_cost = (
             (self.total_output_tokens + estimated_output) / 1_000_000
-        ) * _OUTPUT_COST_PER_MTOK
+        ) * output_per_mtok
         total_cost = new_input_cost + new_output_cost
         if total_cost > self.max_cost_usd:
             raise AnalystBudgetExceeded(
@@ -101,6 +115,7 @@ class CostTracker:
     def summary(self) -> dict[str, object]:
         """Return a summary of usage and remaining budget."""
         return {
+            "model": self.model,
             "total_input_tokens": self.total_input_tokens,
             "total_output_tokens": self.total_output_tokens,
             "call_count": self.call_count,
