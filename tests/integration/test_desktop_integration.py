@@ -7,9 +7,12 @@ They are automatically skipped on systems without these tools.
 from __future__ import annotations
 
 import shutil
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Skip entire module if xvfb is not available
 pytestmark = pytest.mark.skipif(
@@ -27,8 +30,6 @@ class TestDesktopRunnerIntegration:
         """Launch xclock under Xvfb and capture a screenshot."""
         if shutil.which("xclock") is None:
             pytest.skip("xclock not available")
-
-        from unittest.mock import MagicMock
 
         from phantom.models import (
             CaptureDefinition,

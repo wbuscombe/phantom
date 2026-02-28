@@ -292,7 +292,9 @@ class TestSquashPublish:
         # Count commits before
         log_before = subprocess.run(
             ["git", "rev-list", "--count", "HEAD"],
-            cwd=repo, capture_output=True, text=True,
+            cwd=repo,
+            capture_output=True,
+            text=True,
         )
         count_before = int(log_before.stdout.strip())
 
@@ -321,21 +323,28 @@ class TestSquashPublish:
         # Should have exactly 1 new commit (the squash)
         log_after = subprocess.run(
             ["git", "rev-list", "--count", "HEAD"],
-            cwd=repo, capture_output=True, text=True,
+            cwd=repo,
+            capture_output=True,
+            text=True,
         )
         count_after = int(log_after.stdout.strip())
         assert count_after == count_before + 1
 
         # Side branch should be cleaned up
         branches = subprocess.run(
-            ["git", "branch"], cwd=repo, capture_output=True, text=True,
+            ["git", "branch"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
         )
         assert "phantom/screenshots" not in branches.stdout
 
         # Commit message should be descriptive
         msg = subprocess.run(
             ["git", "log", "-1", "--format=%B"],
-            cwd=repo, capture_output=True, text=True,
+            cwd=repo,
+            capture_output=True,
+            text=True,
         )
         assert "docs(screenshots)" in msg.stdout
         assert "[phantom]" in msg.stdout
@@ -343,7 +352,9 @@ class TestSquashPublish:
         # File should be in the commit
         diff = subprocess.run(
             ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
-            cwd=repo, capture_output=True, text=True,
+            cwd=repo,
+            capture_output=True,
+            text=True,
         )
         assert "docs/screenshots/hero.png" in diff.stdout
 
@@ -355,7 +366,9 @@ class TestSquashPublish:
         _init_git_repo(repo)
 
         result = _create_fake_pipeline_result(
-            "unchanged", repo / "screenshot.png", changed=False,
+            "unchanged",
+            repo / "screenshot.png",
+            changed=False,
         )
         config = PublishingConfig(strategy="squash")
 
@@ -386,6 +399,9 @@ class TestSquashPublish:
 
         # Verify no side branch remains
         branches = subprocess.run(
-            ["git", "branch"], cwd=repo, capture_output=True, text=True,
+            ["git", "branch"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
         )
         assert "phantom/screenshots" not in branches.stdout

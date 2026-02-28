@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import pytest
 
@@ -184,34 +186,30 @@ class TestDesktopRunnerActions:
 
 class TestDesktopRunnerCapture:
     @pytest.mark.asyncio
-    async def test_capture_success(
-        self, runner: DesktopRunner, mock_ctx: MagicMock
-    ) -> None:
+    async def test_capture_success(self, runner: DesktopRunner, mock_ctx: MagicMock) -> None:
         """Capture should return success when window is found and screenshot produced."""
         capture_def = MagicMock()
         capture_def.id = "test-capture"
         capture_def.actions = []
         capture_def.wait_after_actions = 0
 
-        # Create a fake screenshot file
-        output_path = mock_ctx.raw_output_dir / "test-capture.png"
+        with (
+            patch.object(runner, "_find_window", return_value="12345"),
+            patch.object(runner, "_capture_window") as mock_cap,
+        ):
 
-        with patch.object(runner, "_find_window", return_value="12345"):
-            with patch.object(runner, "_capture_window") as mock_cap:
-                async def _create_file(wid: str, path: Path, ctx: MagicMock) -> None:
-                    path.write_bytes(b"\x89PNG" + b"\x00" * 200)
+            async def _create_file(wid: str, path: Path, ctx: MagicMock) -> None:
+                path.write_bytes(b"\x89PNG" + b"\x00" * 200)
 
-                mock_cap.side_effect = _create_file
-                result = await runner.capture(mock_ctx, capture_def)
+            mock_cap.side_effect = _create_file
+            result = await runner.capture(mock_ctx, capture_def)
 
         assert result.success
         assert result.capture_id == "test-capture"
         assert result.duration_ms >= 0
 
     @pytest.mark.asyncio
-    async def test_capture_no_window(
-        self, runner: DesktopRunner, mock_ctx: MagicMock
-    ) -> None:
+    async def test_capture_no_window(self, runner: DesktopRunner, mock_ctx: MagicMock) -> None:
         """Capture should fail if no window is found."""
         capture_def = MagicMock()
         capture_def.id = "test-capture"
@@ -227,9 +225,7 @@ class TestDesktopRunnerCapture:
 
 class TestDesktopRunnerTeardown:
     @pytest.mark.asyncio
-    async def test_teardown_cleans_up(
-        self, runner: DesktopRunner, mock_ctx: MagicMock
-    ) -> None:
+    async def test_teardown_cleans_up(self, runner: DesktopRunner, mock_ctx: MagicMock) -> None:
         """Teardown should kill app and Xvfb processes."""
         # Set up mock processes
         app_proc = AsyncMock()
@@ -237,10 +233,12 @@ class TestDesktopRunnerTeardown:
         app_proc.terminate = MagicMock()
         app_proc.kill = MagicMock()
         app_proc.wait = AsyncMock(return_value=0)
+
         # After terminate, set returncode
         async def _wait_terminate() -> int:
             app_proc.returncode = 0
             return 0
+
         app_proc.wait.side_effect = _wait_terminate
 
         xvfb_proc = AsyncMock()
@@ -248,9 +246,11 @@ class TestDesktopRunnerTeardown:
         xvfb_proc.terminate = MagicMock()
         xvfb_proc.kill = MagicMock()
         xvfb_proc.wait = AsyncMock(return_value=0)
+
         async def _wait_xvfb() -> int:
             xvfb_proc.returncode = 0
             return 0
+
         xvfb_proc.wait.side_effect = _wait_xvfb
 
         runner._app_proc = app_proc
@@ -264,9 +264,7 @@ class TestDesktopRunnerTeardown:
         assert runner._window_id is None
 
     @pytest.mark.asyncio
-    async def test_teardown_never_raises(
-        self, runner: DesktopRunner, mock_ctx: MagicMock
-    ) -> None:
+    async def test_teardown_never_raises(self, runner: DesktopRunner, mock_ctx: MagicMock) -> None:
         """Teardown should never raise, even if processes throw."""
         app_proc = MagicMock()
         app_proc.terminate.side_effect = OSError("already dead")

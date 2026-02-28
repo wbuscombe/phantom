@@ -83,11 +83,9 @@ class TestManifestRoundtrip:
 
         # Run phantom validate using the entry point from the same venv
         import shutil
-        from pathlib import Path as P
+        from pathlib import Path
 
-        phantom_bin = shutil.which("phantom") or str(
-            P(sys.executable).parent / "phantom"
-        )
+        phantom_bin = shutil.which("phantom") or str(Path(sys.executable).parent / "phantom")
         result = subprocess.run(
             [phantom_bin, "validate", str(manifest_path)],
             capture_output=True,

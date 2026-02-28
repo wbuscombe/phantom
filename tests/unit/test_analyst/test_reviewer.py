@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from phantom.analyst.reviewer import ReviewReport, ScreenshotReview, ScreenshotReviewer
 
@@ -25,9 +28,9 @@ class TestScreenshotReview:
 
     def test_score_bounds(self) -> None:
         # Score must be 0.0-1.0
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ScreenshotReview(capture_id="x", score=1.5)
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ScreenshotReview(capture_id="x", score=-0.1)
 
 

@@ -47,13 +47,15 @@ def _make_mock_provider(plan_json: str) -> MagicMock:
     """Create a mock provider that returns the given plan JSON."""
     mock_provider = MagicMock()
     mock_provider.model = "claude-sonnet-4-20250514"
-    mock_provider.complete = AsyncMock(return_value=LLMResponse(
-        content=plan_json,
-        input_tokens=3000,
-        output_tokens=1500,
-        model="claude-sonnet-4-20250514",
-        cost_usd=0.01,
-    ))
+    mock_provider.complete = AsyncMock(
+        return_value=LLMResponse(
+            content=plan_json,
+            input_tokens=3000,
+            output_tokens=1500,
+            model="claude-sonnet-4-20250514",
+            cost_usd=0.01,
+        )
+    )
     return mock_provider
 
 
@@ -74,9 +76,7 @@ def _setup_state(project_dir: Path, manifest_yaml: str) -> None:
 class TestAnalyzeIncremental:
     @pytest.mark.asyncio
     @patch("phantom.analyst.diff.subprocess.run")
-    async def test_no_state_runs_full(
-        self, mock_git: MagicMock, tmp_path: Path
-    ) -> None:
+    async def test_no_state_runs_full(self, mock_git: MagicMock, tmp_path: Path) -> None:
         """Without prior state, should run full analysis."""
         plan = _make_plan()
         plan_json = plan.model_dump_json()

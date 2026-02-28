@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -24,7 +24,7 @@ class TestModelPricing:
         assert "claude-opus-4-5-20251101" in MODEL_PRICING
 
     def test_pricing_tuple_format(self) -> None:
-        for model, pricing in MODEL_PRICING.items():
+        for _model, pricing in MODEL_PRICING.items():
             assert isinstance(pricing, tuple)
             assert len(pricing) == 2
             assert pricing[0] > 0  # input cost
@@ -91,17 +91,16 @@ class TestAnthropicProvider:
         assert provider.model == "claude-haiku-4-5-20251001"
 
     def test_ensure_client_raises_without_key(self) -> None:
+        import contextlib
+
         provider = AnthropicProvider(api_key=None)
         with patch.dict(os.environ, {}, clear=True):
             # Remove ANTHROPIC_API_KEY if set
             env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
-            with patch.dict(os.environ, env, clear=True):
-                try:
-                    provider._ensure_client()
-                    # If anthropic is not installed, AnalystDependencyError
-                    # If installed but no key, PhantomError
-                except Exception:
-                    pass  # Expected
+            with patch.dict(os.environ, env, clear=True), contextlib.suppress(Exception):
+                # If anthropic is not installed, AnalystDependencyError
+                # If installed but no key, PhantomError
+                provider._ensure_client()
 
 
 class TestGetProvider:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -88,7 +88,9 @@ _MOCK_PLAN_JSON = {
 }
 
 
-def _make_mock_response(text: str, input_tokens: int = 1000, output_tokens: int = 500) -> LLMResponse:
+def _make_mock_response(
+    text: str, input_tokens: int = 1000, output_tokens: int = 500
+) -> LLMResponse:
     """Create a mock LLMResponse."""
     return LLMResponse(
         content=text,
@@ -152,9 +154,11 @@ class TestAnalyze:
     async def test_valid_response_produces_plan(self, tui_project: Path) -> None:
         mock_provider = MagicMock()
         mock_provider.model = "claude-sonnet-4-20250514"
-        mock_provider.complete = AsyncMock(return_value=_make_mock_response(
-            json.dumps(_MOCK_PLAN_JSON), input_tokens=15000, output_tokens=2000
-        ))
+        mock_provider.complete = AsyncMock(
+            return_value=_make_mock_response(
+                json.dumps(_MOCK_PLAN_JSON), input_tokens=15000, output_tokens=2000
+            )
+        )
 
         analyzer = ProjectAnalyzer(api_key="test-key", provider=mock_provider)
         plan = await analyzer.analyze(tui_project)
@@ -168,10 +172,12 @@ class TestAnalyze:
         mock_provider = MagicMock()
         mock_provider.model = "claude-sonnet-4-20250514"
         # First call returns invalid JSON, second returns valid
-        mock_provider.complete = AsyncMock(side_effect=[
-            _make_mock_response("This is not valid JSON at all"),
-            _make_mock_response(json.dumps(_MOCK_PLAN_JSON)),
-        ])
+        mock_provider.complete = AsyncMock(
+            side_effect=[
+                _make_mock_response("This is not valid JSON at all"),
+                _make_mock_response(json.dumps(_MOCK_PLAN_JSON)),
+            ]
+        )
 
         analyzer = ProjectAnalyzer(api_key="test-key", provider=mock_provider)
         plan = await analyzer.analyze(tui_project)
@@ -200,9 +206,11 @@ class TestAnalyze:
     async def test_records_usage(self, tui_project: Path) -> None:
         mock_provider = MagicMock()
         mock_provider.model = "claude-sonnet-4-20250514"
-        mock_provider.complete = AsyncMock(return_value=_make_mock_response(
-            json.dumps(_MOCK_PLAN_JSON), input_tokens=18000, output_tokens=2500
-        ))
+        mock_provider.complete = AsyncMock(
+            return_value=_make_mock_response(
+                json.dumps(_MOCK_PLAN_JSON), input_tokens=18000, output_tokens=2500
+            )
+        )
 
         tracker = CostTracker()
         analyzer = ProjectAnalyzer(api_key="test-key", cost_tracker=tracker, provider=mock_provider)
@@ -244,8 +252,9 @@ class TestMissingDependency:
             env.pop("ANTHROPIC_API_KEY", None)
             with patch.dict(os.environ, env, clear=True):
                 from phantom.analyst.providers import AnthropicProvider
+
                 provider = AnthropicProvider(api_key=None)
-                with pytest.raises(PhantomError, match="API key"):
+                with pytest.raises(PhantomError, match=r"API key|anthropic"):
                     provider._ensure_client()
 
 

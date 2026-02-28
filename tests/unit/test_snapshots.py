@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import pytest
 
@@ -84,15 +87,21 @@ class TestSnapshotManager:
     async def test_rollback_latest(self, mgr: SnapshotManager, tmp_path: Path) -> None:
         # Create a snapshot record manually
         state_path = tmp_path / ".phantom-state.json"
-        state_path.write_text(json.dumps({
-            "snapshots": [{
-                "id": "snap1",
-                "timestamp": 1000.0,
-                "commit_sha": "abc123",
-                "file_hashes": {"docs/screenshots/main.png": "deadbeef"},
-                "capture_count": 1,
-            }]
-        }))
+        state_path.write_text(
+            json.dumps(
+                {
+                    "snapshots": [
+                        {
+                            "id": "snap1",
+                            "timestamp": 1000.0,
+                            "commit_sha": "abc123",
+                            "file_hashes": {"docs/screenshots/main.png": "deadbeef"},
+                            "capture_count": 1,
+                        }
+                    ]
+                }
+            )
+        )
 
         with patch("phantom.conductor.snapshots.run_command") as mock_cmd:
             mock_cmd.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -108,24 +117,28 @@ class TestSnapshotManager:
     @pytest.mark.asyncio
     async def test_rollback_specific_id(self, mgr: SnapshotManager, tmp_path: Path) -> None:
         state_path = tmp_path / ".phantom-state.json"
-        state_path.write_text(json.dumps({
-            "snapshots": [
+        state_path.write_text(
+            json.dumps(
                 {
-                    "id": "snap1",
-                    "timestamp": 1000.0,
-                    "commit_sha": "aaa111",
-                    "file_hashes": {"docs/screenshots/old.png": "hash1"},
-                    "capture_count": 1,
-                },
-                {
-                    "id": "snap2",
-                    "timestamp": 2000.0,
-                    "commit_sha": "bbb222",
-                    "file_hashes": {"docs/screenshots/new.png": "hash2"},
-                    "capture_count": 1,
-                },
-            ]
-        }))
+                    "snapshots": [
+                        {
+                            "id": "snap1",
+                            "timestamp": 1000.0,
+                            "commit_sha": "aaa111",
+                            "file_hashes": {"docs/screenshots/old.png": "hash1"},
+                            "capture_count": 1,
+                        },
+                        {
+                            "id": "snap2",
+                            "timestamp": 2000.0,
+                            "commit_sha": "bbb222",
+                            "file_hashes": {"docs/screenshots/new.png": "hash2"},
+                            "capture_count": 1,
+                        },
+                    ]
+                }
+            )
+        )
 
         with patch("phantom.conductor.snapshots.run_command") as mock_cmd:
             mock_cmd.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -143,15 +156,21 @@ class TestSnapshotManager:
     @pytest.mark.asyncio
     async def test_rollback_unknown_id(self, mgr: SnapshotManager, tmp_path: Path) -> None:
         state_path = tmp_path / ".phantom-state.json"
-        state_path.write_text(json.dumps({
-            "snapshots": [{
-                "id": "snap1",
-                "timestamp": 1000.0,
-                "commit_sha": "abc",
-                "file_hashes": {},
-                "capture_count": 0,
-            }]
-        }))
+        state_path.write_text(
+            json.dumps(
+                {
+                    "snapshots": [
+                        {
+                            "id": "snap1",
+                            "timestamp": 1000.0,
+                            "commit_sha": "abc",
+                            "file_hashes": {},
+                            "capture_count": 0,
+                        }
+                    ]
+                }
+            )
+        )
 
         result = await mgr.rollback("nonexistent")
         assert result is False
@@ -174,10 +193,14 @@ class TestSnapshotManager:
     def test_preserves_other_state_keys(self, tmp_path: Path) -> None:
         """Saving snapshots should not clobber other keys in state file."""
         state_path = tmp_path / ".phantom-state.json"
-        state_path.write_text(json.dumps({
-            "last_analysis_commit": "abc",
-            "other_key": "value",
-        }))
+        state_path.write_text(
+            json.dumps(
+                {
+                    "last_analysis_commit": "abc",
+                    "other_key": "value",
+                }
+            )
+        )
 
         mgr = SnapshotManager(tmp_path)
         mgr._save_snapshots([Snapshot(id="s1", timestamp=1.0)])
