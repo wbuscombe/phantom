@@ -395,7 +395,9 @@ async def publish_squash(
         6. Delete the side branch
         7. Push *target*
     """
-    target_branch = publishing_config.branch
+    # Capture the actual current branch so we can return to it after the
+    # squash - the repo's default branch may not match publishing_config.branch.
+    target_branch = await _get_current_branch(repo_dir)
     changed_results = [r for r in pipeline_results if r.changed or force]
 
     if not changed_results and not readme_updated:
