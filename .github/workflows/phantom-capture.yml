@@ -37,6 +37,11 @@ on:
         required: false
         default: false
         type: boolean
+      upload-screenshots-artifact:
+        description: "Upload captured screenshots as a workflow artifact (debug only; OFF by default to avoid exposing frames before review)"
+        required: false
+        default: false
+        type: boolean
     secrets:
       github-token:
         description: "GitHub token for pushing/PRs"
@@ -185,9 +190,13 @@ jobs:
           fi
           phantom run $FLAGS
 
-      # ── Upload artifacts (always, for debugging) ──
+      # ── Upload artifacts (opt-in, success-only) ──
+      # Captured frames are committed by the publish steps below; the artifact
+      # is only useful for debugging. It is gated on success() AND an explicit
+      # opt-in so a sensitive/failed frame is never made externally downloadable
+      # before a human reviews it (artifacts are world-readable on public repos).
       - name: Upload screenshots
-        if: always()
+        if: success() && inputs.upload-screenshots-artifact
         uses: actions/upload-artifact@v4
         with:
           name: phantom-screenshots
