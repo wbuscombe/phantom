@@ -340,3 +340,109 @@ class TestOrchestratorRun:
 
         assert report.state == JobState.FAILED
         assert "nonexistent" in (report.error or "")
+
+
+class TestOrchestratorQualityGate:
+    """The publish step must not commit/push frames that fail an
+    error-severity quality check unless --force is given (RC-A.1)."""
+
+    @staticmethod
+    def _runner_producing(make_image):
+        """Build a mock runner whose every capture writes ``make_image()``."""
+        from phantom.runners.base import BaseRunner, CaptureResult, RunnerContext
+
+        class _Runner(BaseRunner):
+            async def setup(self, ctx: RunnerContext) -> None:
+                pass
+
+            async def launch(self, ctx: RunnerContext) -> None:
+                pass
+
+            async def capture(self, ctx: RunnerContext, capture_def) -> CaptureResult:
+                output_path = ctx.raw_output_dir / f"{capture_def.id}.png"
+                make_image().save(output_path)
+                return CaptureResult(
+                    capture_id=capture_def.id,
+                    success=True,
+                    output_path=output_path,
+                    duration_ms=10,
+                )
+
+            async def teardown(self, ctx: RunnerContext) -> None:
+                pass
+
+        return _Runner()
+
+    @staticmethod
+    def _blank_image():
+        # Solid white -> blank_detection (uniformity 1.0) AND tiny file: error severity.
+        return Image.new("RGB", (800, 600), (255, 255, 255))
+
+    @staticmethod
+    def _warning_only_image():
+        # Wide RGB noise: rich content (no blank/size/dimension errors) but a
+        # 6:1 aspect ratio -> aspect_ratio WARNING only, so it should still publish.
+        import numpy as np
+
+        rng = np.random.default_rng(0)
+        arr = rng.integers(0, 256, size=(200, 1200, 3), dtype="uint8")
+        return Image.fromarray(arr, "RGB")
+
+    @staticmethod
+    def _commit_count(project_dir: Path) -> str:
+        result = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip()
+
+    def _run(self, tmp_path: Path, make_image, *, force: bool = False):
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        _init_test_repo(project_dir)
+        manifest_path = project_dir / ".phantom.yml"
+        _write_test_manifest(manifest_path, project_dir)
+        manifest = load_manifest(str(manifest_path))
+
+        options = JobOptions(local_project=project_dir, force=force)  # publish ON
+        orch = Orchestrator(
+            manifest=manifest,
+            options=options,
+            workspace_root=tmp_path / "workspace",
+            state_manager=StateManager(tmp_path / "state.json"),
+        )
+        runner = self._runner_producing(make_image)
+        before = self._commit_count(project_dir)
+        with patch.object(orch, "_create_runner", return_value=runner):
+            report = asyncio.get_event_loop().run_until_complete(orch.run())
+        after = self._commit_count(project_dir)
+        return report, before, after
+
+    @pytest.mark.integration
+    def test_publish_blocked_on_quality_failure(self, tmp_path: Path) -> None:
+        """An error-severity quality failure must block commit/push (no --force)."""
+        report, before, after = self._run(tmp_path, self._blank_image, force=False)
+
+        assert report.commit_sha is None, "blocked publish must not produce a commit"
+        assert report.blocked_by_quality is True
+        assert after == before, "no new commit should be created when blocked"
+
+    @pytest.mark.integration
+    def test_force_overrides_quality_gate(self, tmp_path: Path) -> None:
+        """--force publishes even when quality fails (protects onboarded projects/CI)."""
+        report, before, after = self._run(tmp_path, self._blank_image, force=True)
+
+        assert report.blocked_by_quality is False
+        assert report.commit_sha is not None, "--force must publish despite quality failure"
+        assert after != before, "a commit should be created when forced"
+
+    @pytest.mark.integration
+    def test_warning_severity_still_publishes(self, tmp_path: Path) -> None:
+        """Warning-only issues (e.g. extreme aspect ratio) must NOT block publish."""
+        report, before, after = self._run(tmp_path, self._warning_only_image, force=False)
+
+        assert report.blocked_by_quality is False
+        assert report.commit_sha is not None, "warning-only frames should still publish"
+        assert after != before

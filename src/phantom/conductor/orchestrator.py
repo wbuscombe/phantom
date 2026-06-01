@@ -85,6 +85,7 @@ class JobReport:
     pipeline_results: list[PipelineResult] = field(default_factory=list)
     trigger_source: str = "cli"
     skipped_unchanged: bool = False
+    blocked_by_quality: bool = False
     avg_diff_pct: float | None = None
     quality_reports: list[Any] = field(default_factory=list)
     consistency_report: Any | None = None
@@ -467,6 +468,29 @@ class Orchestrator:
         """Handle README updates and git publishing."""
         if self._options.skip_publish:
             logger.info("publish_skipped", reason="--skip-publish flag")
+            return
+
+        # Quality gate (RC-A.1): never commit/push a capture that failed an
+        # error-severity quality check unless --force was given. Warnings stay
+        # advisory; only error-severity issues (blank/too-small/bad-dimensions)
+        # block, so intentional low-entropy frames (splash screens) still
+        # publish. QualityReport.passed is False iff an error-severity issue
+        # was found (see analyst.quality.QualityChecker).
+        failed = [qr for qr in report.quality_reports if not getattr(qr, "passed", True)]
+        if failed and not self._options.force:
+            report.blocked_by_quality = True
+            error_issues = [
+                issue.message
+                for qr in failed
+                for issue in getattr(qr, "issues", [])
+                if getattr(issue, "severity", "") == "error"
+            ]
+            logger.error(
+                "publish_blocked_quality",
+                captures=[getattr(qr, "capture_id", "?") for qr in failed],
+                issues=error_issues,
+                hint="re-run with --force to publish anyway",
+            )
             return
 
         # Update README sentinels

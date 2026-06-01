@@ -262,6 +262,12 @@ def run(
     if report.error:
         raise SystemExit(1)
 
+    # A quality-blocked publish is a non-success outcome: exit non-zero so the
+    # operator (or a wrapping script) notices nothing was published. CI uses
+    # --skip-publish, so the gate never fires there.
+    if report.blocked_by_quality:
+        raise SystemExit(1)
+
 
 def _print_report(report: JobReport, elapsed: float) -> None:
     """Print a summary of the run."""
@@ -287,6 +293,12 @@ def _print_report(report: JobReport, elapsed: float) -> None:
             lines.append(f"[bold]Changed:[/bold] [cyan]{report.captures_changed}[/cyan]")
         if report.captures_unchanged > 0:
             lines.append(f"[bold]Same:[/bold]    [dim]{report.captures_unchanged}[/dim]")
+
+    if getattr(report, "blocked_by_quality", False):
+        lines.append(
+            "[bold red]Publish blocked:[/bold red] a capture failed an error-severity "
+            "quality check — nothing was committed. Re-run with [bold]--force[/bold] to publish anyway."
+        )
 
     if report.commit_sha:
         lines.append(f"[bold]Commit:[/bold]  {report.commit_sha[:8]}")
