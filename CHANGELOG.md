@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Publish quality gate** (`Orchestrator._publish`): `phantom run` no longer commits or pushes a capture that fails an **error-severity** quality check (blank / too-small / bad-dimensions). Pass `--force` to publish anyway (for intentional low-entropy frames such as splash screens). Warning-severity issues remain advisory and still publish. CI is unaffected because it runs with `--skip-publish`. A blocked publish exits non-zero and sets `JobReport.blocked_by_quality`.
+- **CI screenshot artifact is now opt-in and success-only**: the reusable `phantom-capture.yml` uploads `docs/screenshots/` as a workflow artifact only when the new `upload-screenshots-artifact` input is `true` **and** the run succeeded (previously `if: always()`). This prevents a sensitive or failed frame from becoming externally downloadable before review — independent of the `pr` publish gate.
+
+### Fixed
+
+- **Corrected auto-rollback documentation**: snapshots/rollback are a **manual** CLI tool, not an automatic safety net. The orchestrator never auto-creates snapshots and a failing quality check does not trigger a rollback; rollback is forward-only and cannot remove an already-pushed frame. Updated the `SnapshotManager` docstring, the 0.3.0 changelog entry, and the collaborator guide accordingly.
+
 ## [0.3.0] - 2026-02-28
 
 ### Added
@@ -14,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Desktop Runner** for native GUI apps (SDL2, Swing, Qt, GTK) via Xvfb + xdotool + ImageMagick. Supports click, keystroke, type, drag, wait, and raw xdotool actions.
 - **LLM provider abstraction** (`providers.py`) with `LLMProvider` protocol, `AnthropicProvider`, and per-model pricing table. Configurable via `PHANTOM_LLM_PROVIDER` and `PHANTOM_LLM_MODEL` env vars.
 - **Screenshot visual review** (`--review` flag) sends captured screenshots to vision API for quality scoring, issue detection, and improvement suggestions. Off by default, $0.30 budget cap.
-- **Rollback mechanism** with `SnapshotManager` for recording pre-publish state. New CLI commands: `phantom snapshots` and `phantom rollback`.
+- **Manual snapshot/rollback CLI** (`phantom snapshots`, `phantom rollback`) via `SnapshotManager` to record and restore screenshot state on demand. (Manual only — not triggered automatically during a run; rollback is forward-only and cannot remove an already-pushed frame.)
 - **Bot commit squash strategy** (`strategy: squash` in publishing config) commits to a side branch and squash-merges for a cleaner git history — one commit per screenshot update cycle.
 - **Enhanced bot commit messages** with per-capture detail: updated/unchanged lists, quality summary, and capture count in subject line.
 - **Desktop runner deps** in reusable workflow: xdotool and imagemagick added alongside xvfb.

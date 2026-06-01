@@ -1,8 +1,15 @@
-"""Snapshot management for rollback capability.
+"""Snapshot management for the manual ``phantom snapshots`` / ``phantom rollback`` CLI.
 
-Before committing changes, a snapshot records the current commit hash and
-screenshot file hashes.  If a quality check fails critically, Phantom can
-roll back to the previous known-good state.
+``phantom snapshots`` records the current commit hash and screenshot file hashes;
+``phantom rollback`` restores those files from the recorded commit.
+
+NOTE: this is a MANUAL tool, not an automatic safety net. The orchestrator does
+not create snapshots or roll back during a ``phantom run``, and a failing quality
+check does not trigger a rollback — the publish quality gate prevents bad frames
+from being committed in the first place (see ``Orchestrator._publish``). Rollback
+is also forward-only: it restores files via ``git checkout`` into a *new* commit
+and therefore CANNOT remove a frame already pushed to a remote — that blob persists
+in history and may already have been cloned or cached.
 """
 
 from __future__ import annotations
