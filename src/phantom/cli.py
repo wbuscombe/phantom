@@ -84,7 +84,13 @@ def validate(manifest_path: str) -> None:
 @click.option("--capture", "-c", "capture_id", help="Run a single capture by ID.")
 @click.option("--group", "-g", help="Run captures in a named group.")
 @click.option("--skip-publish", is_flag=True, help="Capture and process but skip git.")
-@click.option("--force", is_flag=True, help="Commit even if below diff threshold.")
+@click.option("--force", is_flag=True, help="Commit even if below diff threshold or quality fails.")
+@click.option(
+    "--fail-on-quality-error",
+    is_flag=True,
+    help="Exit non-zero if any capture fails an error-severity quality check "
+    "(for CI fail-closed gating, even with --skip-publish). Overridden by --force.",
+)
 @click.option("--if-changed", is_flag=True, help="Skip if repo HEAD matches last captured SHA.")
 @click.option(
     "--ai-analyst", is_flag=True, help="Generate manifest via AI instead of reading .phantom.yml."
@@ -106,6 +112,7 @@ def run(
     group: str | None,
     skip_publish: bool,
     force: bool,
+    fail_on_quality_error: bool,
     if_changed: bool,
     ai_analyst: bool,
     ai_document: bool,
@@ -234,6 +241,7 @@ def run(
         dry_run=dry_run,
         skip_publish=skip_publish,
         force=force,
+        fail_on_quality_error=fail_on_quality_error,
         capture_id=capture_id,
         capture_ids=affected_capture_ids,
         group=group,
@@ -296,8 +304,8 @@ def _print_report(report: JobReport, elapsed: float) -> None:
 
     if getattr(report, "blocked_by_quality", False):
         lines.append(
-            "[bold red]Publish blocked:[/bold red] a capture failed an error-severity "
-            "quality check — nothing was committed. Re-run with [bold]--force[/bold] to publish anyway."
+            "[bold red]Quality gate:[/bold red] a capture failed an error-severity "
+            "quality check — nothing was published. Re-run with [bold]--force[/bold] to override."
         )
 
     if report.commit_sha:

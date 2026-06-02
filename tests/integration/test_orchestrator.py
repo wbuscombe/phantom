@@ -398,7 +398,7 @@ class TestOrchestratorQualityGate:
         )
         return result.stdout.strip()
 
-    def _run(self, tmp_path: Path, make_image, *, force: bool = False):
+    def _run(self, tmp_path: Path, make_image, **option_kwargs):
         project_dir = tmp_path / "project"
         project_dir.mkdir()
         _init_test_repo(project_dir)
@@ -406,7 +406,9 @@ class TestOrchestratorQualityGate:
         _write_test_manifest(manifest_path, project_dir)
         manifest = load_manifest(str(manifest_path))
 
-        options = JobOptions(local_project=project_dir, force=force)  # publish ON
+        options = JobOptions(
+            local_project=project_dir, **option_kwargs
+        )  # publish ON unless overridden
         orch = Orchestrator(
             manifest=manifest,
             options=options,
@@ -446,3 +448,90 @@ class TestOrchestratorQualityGate:
         assert report.blocked_by_quality is False
         assert report.commit_sha is not None, "warning-only frames should still publish"
         assert after != before
+
+    # ── CI fail-closed path: --skip-publish + --fail-on-quality-error (RC-A.1/CI) ──
+
+    @pytest.mark.integration
+    def test_skip_publish_fail_on_quality_marks_blocked(self, tmp_path: Path) -> None:
+        """In --skip-publish mode (used by CI), --fail-on-quality-error must flag an
+        error-severity run as blocked so the CLI exits non-zero and CI skips commit."""
+        report, before, after = self._run(
+            tmp_path, self._blank_image, skip_publish=True, fail_on_quality_error=True
+        )
+
+        assert report.blocked_by_quality is True
+        assert report.commit_sha is None  # --skip-publish never commits
+        assert after == before
+
+    @pytest.mark.integration
+    def test_skip_publish_without_flag_not_blocked(self, tmp_path: Path) -> None:
+        """--skip-publish alone (no fail-on-quality flag) must NOT block, even on a
+        bad frame — preserves the local 'inspect without committing' workflow."""
+        report, _before, _after = self._run(tmp_path, self._blank_image, skip_publish=True)
+
+        assert report.blocked_by_quality is False
+
+    @pytest.mark.integration
+    def test_skip_publish_force_overrides_fail_on_quality(self, tmp_path: Path) -> None:
+        """--force overrides the CI quality gate (wireable into CI via an input)."""
+        report, _before, _after = self._run(
+            tmp_path,
+            self._blank_image,
+            skip_publish=True,
+            fail_on_quality_error=True,
+            force=True,
+        )
+
+        assert report.blocked_by_quality is False
+
+
+class TestCIQualityGateCLI:
+    """End-to-end CLI exit codes for `phantom run --skip-publish --fail-on-quality-error`."""
+
+    @staticmethod
+    def _project(tmp_path: Path) -> Path:
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        _init_test_repo(project_dir)
+        _write_test_manifest(project_dir / ".phantom.yml", project_dir)
+        return project_dir
+
+    @staticmethod
+    def _invoke(project_dir: Path, make_image, extra_args: list[str]):
+        from click.testing import CliRunner
+
+        from phantom.cli import main
+
+        runner = TestOrchestratorQualityGate._runner_producing(make_image)
+        with patch("phantom.runners.get_runner", return_value=runner):
+            return CliRunner().invoke(
+                main, ["run", "-p", str(project_dir), "--skip-publish", *extra_args]
+            )
+
+    @pytest.mark.integration
+    def test_exit_nonzero_on_error_frame(self, tmp_path: Path) -> None:
+        result = self._invoke(
+            self._project(tmp_path),
+            TestOrchestratorQualityGate._blank_image,
+            ["--fail-on-quality-error"],
+        )
+        assert result.exit_code == 1
+        assert "quality" in result.output.lower()
+
+    @pytest.mark.integration
+    def test_exit_zero_when_quality_ok(self, tmp_path: Path) -> None:
+        result = self._invoke(
+            self._project(tmp_path),
+            TestOrchestratorQualityGate._warning_only_image,
+            ["--fail-on-quality-error"],
+        )
+        assert result.exit_code == 0
+
+    @pytest.mark.integration
+    def test_force_overrides_exit(self, tmp_path: Path) -> None:
+        result = self._invoke(
+            self._project(tmp_path),
+            TestOrchestratorQualityGate._blank_image,
+            ["--fail-on-quality-error", "--force"],
+        )
+        assert result.exit_code == 0
