@@ -114,6 +114,8 @@ echo "YOUR_ANTHROPIC_API_KEY" | gh secret set ANTHROPIC_API_KEY
 
 Then push. The workflow triggers on pushes to main and takes fresh screenshots automatically.
 
+**Quality gate:** CI runs `phantom run --skip-publish --fail-on-quality-error`, so if a capture fails an error-severity quality check (blank, too small, wrong dimensions) the job **fails and nothing is committed** — you'll see a red run instead of a bad screenshot landing in your repo. Warnings (e.g. low entropy) don't block. If a capture *intentionally* produces a low-signal frame, set the `force-publish: true` input on the reusable workflow to publish anyway.
+
 ## What You Get
 
 After onboarding, your repo will have:
