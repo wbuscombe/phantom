@@ -61,16 +61,14 @@ class TestScreenshotReviewer:
         reviewer = ScreenshotReviewer(provider=MagicMock())
         import asyncio
 
-        report = asyncio.get_event_loop().run_until_complete(reviewer.review({}))
+        report = asyncio.run(reviewer.review({}))
         assert "No screenshots" in report.summary
 
     def test_review_missing_files(self, tmp_path: Path) -> None:
         reviewer = ScreenshotReviewer(provider=MagicMock())
         import asyncio
 
-        report = asyncio.get_event_loop().run_until_complete(
-            reviewer.review({"missing": tmp_path / "nonexistent.png"})
-        )
+        report = asyncio.run(reviewer.review({"missing": tmp_path / "nonexistent.png"}))
         assert "No valid screenshots" in report.summary
 
     def test_parse_review_valid_json(self) -> None:

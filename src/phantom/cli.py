@@ -17,10 +17,31 @@ from rich.table import Table
 from phantom import __version__
 
 if TYPE_CHECKING:
+    from collections.abc import Coroutine
+
     from phantom.conductor.orchestrator import JobReport
 
 console = Console(stderr=True)
 output = Console()
+
+
+def _run_async[T](coro: Coroutine[object, object, T]) -> T:
+    """Run a coroutine to completion from synchronous CLI code.
+
+    Python 3.12 no longer auto-creates an event loop for the main thread, so
+    ``asyncio.get_event_loop()`` raises when none is current. This ensures a
+    current loop exists and reuses it across calls within a single CLI
+    invocation (so async clients bound to the loop stay valid), while remaining
+    correct on fresh interpreters.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
 
 
 @click.group()
@@ -171,7 +192,7 @@ def run(
         # Use incremental if state exists and not forced full
         if not full and state_mgr.has_state():
             console.print("  Analyzing project (incremental)...")
-            plan, diff_result = asyncio.get_event_loop().run_until_complete(
+            plan, diff_result = _run_async(
                 analyzer.analyze_incremental(project_path, force_full=False)
             )
             console.print(
@@ -187,11 +208,9 @@ def run(
                 console.print(f"  Incremental: {len(affected_capture_ids)} captures affected")
         else:
             console.print("  Analyzing project (full)...")
-            plan = asyncio.get_event_loop().run_until_complete(analyzer.analyze(project_path))
+            plan = _run_async(analyzer.analyze(project_path))
 
-        manifest_yaml = asyncio.get_event_loop().run_until_complete(
-            analyzer.generate_manifest(plan, project_path)
-        )
+        manifest_yaml = _run_async(analyzer.generate_manifest(plan, project_path))
 
         console.print(f"  AI plan: {len(plan.captures)} captures, {len(plan.features)} features")
         if verbose:
@@ -253,7 +272,7 @@ def run(
     orchestrator = Orchestrator(manifest=m, options=options)
 
     start = time.monotonic()
-    report = asyncio.get_event_loop().run_until_complete(orchestrator.run())
+    report = _run_async(orchestrator.run())
     elapsed = time.monotonic() - start
 
     # Print report
@@ -351,9 +370,7 @@ def _run_visual_review(
 
     try:
         reviewer = ScreenshotReviewer()
-        review_report = asyncio.get_event_loop().run_until_complete(
-            reviewer.review(screenshots, descriptions)
-        )
+        review_report = _run_async(reviewer.review(screenshots, descriptions))
 
         console.print(f"  Overall score: {review_report.overall_score:.1f}")
         console.print(f"  Summary: {review_report.summary}")
@@ -403,7 +420,7 @@ def _run_ai_document(
     writer = DocumentationWriter(cost_tracker=cost_tracker)
 
     try:
-        doc_update = asyncio.get_event_loop().run_until_complete(
+        doc_update = _run_async(
             writer.write_docs(
                 screenshots=screenshots,
                 plan=plan,  # type: ignore[arg-type]
@@ -482,9 +499,7 @@ def analyze(
 
     try:
         # Detect project type
-        project_type = asyncio.get_event_loop().run_until_complete(
-            analyzer.detect_project_type(project_dir)
-        )
+        project_type = _run_async(analyzer.detect_project_type(project_dir))
         output.print(f"  Detected type: [cyan]{project_type}[/cyan]")
 
         # Dry-run mode: just show diff recommendation
@@ -517,7 +532,7 @@ def analyze(
 
         # Incremental mode if state exists and not forced
         if not full and state_mgr.has_state():
-            plan, diff_result = asyncio.get_event_loop().run_until_complete(
+            plan, diff_result = _run_async(
                 analyzer.analyze_incremental(project_dir, force_full=False)
             )
 
@@ -537,12 +552,10 @@ def analyze(
                 return
         else:
             # Full analysis
-            plan = asyncio.get_event_loop().run_until_complete(analyzer.analyze(project_dir))
+            plan = _run_async(analyzer.analyze(project_dir))
 
             # Save state for future incremental runs
-            manifest_yaml = asyncio.get_event_loop().run_until_complete(
-                analyzer.generate_manifest(plan, project_dir)
-            )
+            manifest_yaml = _run_async(analyzer.generate_manifest(plan, project_dir))
             from phantom.analyst.diff import DiffAnalyzer
 
             head_sha = DiffAnalyzer(project_dir).get_head_sha()
@@ -577,9 +590,7 @@ def analyze(
                 output.print(f"  {sec.section_header} → {sec.target_file} ({sec.placement})")
 
         # Generate manifest
-        manifest_yaml = asyncio.get_event_loop().run_until_complete(
-            analyzer.generate_manifest(plan, project_dir)
-        )
+        manifest_yaml = _run_async(analyzer.generate_manifest(plan, project_dir))
 
         if write:
             manifest_path = project_dir / ".phantom.yml"
@@ -1050,7 +1061,7 @@ def doctor(verbose: bool) -> None:
     output.print(f"[bold]Phantom v{__version__}[/bold] — doctor")
     output.print()
 
-    results = asyncio.get_event_loop().run_until_complete(check_all_dependencies())
+    results = _run_async(check_all_dependencies())
 
     table = Table(show_header=True, header_style="bold")
     table.add_column("Tool")
@@ -1331,7 +1342,7 @@ def rollback(directory: str, snapshot_id: str | None, latest: bool) -> None:
     mgr = SnapshotManager(project_dir)
     target = None if latest else snapshot_id
 
-    success = asyncio.get_event_loop().run_until_complete(mgr.rollback(target))
+    success = _run_async(mgr.rollback(target))
     if success:
         output.print("[green]Rollback complete.[/green]")
     else:

@@ -62,7 +62,7 @@ class TestColorNormalize:
 
         img_path = create_test_image(tmp_path / "test.png")
         stage = ColorNormalizeStage()
-        result = asyncio.get_event_loop().run_until_complete(stage.process(img_path, {}))
+        result = asyncio.run(stage.process(img_path, {}))
         assert result.output_path == img_path
         assert not result.changed
 
@@ -82,7 +82,7 @@ class TestExifStrip:
 
         img_path = create_test_image(tmp_path / "clean.png")
         stage = ExifStripStage()
-        result = asyncio.get_event_loop().run_until_complete(stage.process(img_path, {}))
+        result = asyncio.run(stage.process(img_path, {}))
         assert result.output_path == img_path
         # PNG from Pillow may or may not have metadata, so just verify it doesn't crash
 
@@ -102,7 +102,7 @@ class TestCrop:
 
         img_path = create_test_image(tmp_path / "test.png", 400, 300)
         stage = CropStage()
-        result = asyncio.get_event_loop().run_until_complete(stage.process(img_path, {}))
+        result = asyncio.run(stage.process(img_path, {}))
         assert not result.changed
         img = Image.open(result.output_path)
         assert img.size == (400, 300)
@@ -113,7 +113,7 @@ class TestCrop:
 
         img_path = create_test_image(tmp_path / "test.png", 400, 300)
         stage = CropStage()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             stage.process(img_path, {"crop": {"x": 50, "y": 50, "width": 200, "height": 150}})
         )
         assert result.changed is True
@@ -126,7 +126,7 @@ class TestCrop:
 
         img_path = create_test_image(tmp_path / "test.png", 400, 300)
         stage = CropStage()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             stage.process(img_path, {"crop": {"x": 300, "y": 200, "width": 200, "height": 200}})
         )
         img = Image.open(result.output_path)
@@ -145,9 +145,7 @@ class TestResize:
 
         img_path = create_test_image(tmp_path / "test.png", 400, 300)
         stage = ResizeStage()
-        result = asyncio.get_event_loop().run_until_complete(
-            stage.process(img_path, {"max_width": 2800})
-        )
+        result = asyncio.run(stage.process(img_path, {"max_width": 2800}))
         assert not result.changed
         img = Image.open(result.output_path)
         assert img.size == (400, 300)
@@ -158,9 +156,7 @@ class TestResize:
 
         img_path = create_test_image(tmp_path / "test.png", 3000, 2000)
         stage = ResizeStage()
-        result = asyncio.get_event_loop().run_until_complete(
-            stage.process(img_path, {"max_width": 1500})
-        )
+        result = asyncio.run(stage.process(img_path, {"max_width": 1500}))
         assert result.changed is True
         img = Image.open(result.output_path)
         assert img.width == 1500
@@ -172,9 +168,7 @@ class TestResize:
 
         img_path = create_test_image(tmp_path / "test.png", 2880, 1800)
         stage = ResizeStage()
-        result = asyncio.get_event_loop().run_until_complete(
-            stage.process(img_path, {"max_width": 2800})
-        )
+        result = asyncio.run(stage.process(img_path, {"max_width": 2800}))
         img = Image.open(result.output_path)
         assert img.width == 2800
         expected_height = int(1800 * (2800 / 2880))
@@ -202,7 +196,7 @@ class TestBorder:
                 "corner_radius": 8,
             }
         }
-        result = asyncio.get_event_loop().run_until_complete(stage.process(img_path, config))
+        result = asyncio.run(stage.process(img_path, config))
         assert result.changed is True
         img = Image.open(result.output_path)
         # Canvas = source + padding*2 + shadow_extent(blur*2)
@@ -225,7 +219,7 @@ class TestBorder:
                 "corner_radius": 4,
             }
         }
-        result = asyncio.get_event_loop().run_until_complete(stage.process(img_path, config))
+        result = asyncio.run(stage.process(img_path, config))
         img = Image.open(result.output_path)
         assert img.mode == "RGBA"
         # Top-left corner should be transparent (or nearly so)
@@ -239,9 +233,7 @@ class TestBorder:
         img_path = create_test_image(tmp_path / "test.png", 200, 150)
         original_size = Image.open(img_path).size
         stage = BorderStage()
-        result = asyncio.get_event_loop().run_until_complete(
-            stage.process(img_path, {"border": {"style": "none"}})
-        )
+        result = asyncio.run(stage.process(img_path, {"border": {"style": "none"}}))
         assert not result.changed
         assert Image.open(result.output_path).size == original_size
 
@@ -258,7 +250,7 @@ class TestBorder:
                 "corner_radius": 4,
             }
         }
-        result = asyncio.get_event_loop().run_until_complete(stage.process(img_path, config))
+        result = asyncio.run(stage.process(img_path, config))
         img = Image.open(result.output_path)
         assert img.width == 200 + 4 * 2
         assert img.height == 150 + 4 * 2
@@ -270,7 +262,7 @@ class TestBorder:
         img_path = create_test_image(tmp_path / "test.png", 200, 150)
         stage = BorderStage()
         config = {"border": {"style": "rounded", "corner_radius": 12}}
-        result = asyncio.get_event_loop().run_until_complete(stage.process(img_path, config))
+        result = asyncio.run(stage.process(img_path, config))
         img = Image.open(result.output_path)
         assert img.mode == "RGBA"
         assert img.size == (200, 150)  # No size change
@@ -292,7 +284,7 @@ class TestBorder:
                 "corner_radius": 4,
             }
         }
-        result = asyncio.get_event_loop().run_until_complete(stage.process(img_path, config))
+        result = asyncio.run(stage.process(img_path, config))
         img = Image.open(result.output_path)
         assert img.mode == "RGBA"
 
@@ -307,9 +299,7 @@ class TestOptimize:
 
         img_path = create_test_image(tmp_path / "test.png")
         stage = OptimizeStage()
-        result = asyncio.get_event_loop().run_until_complete(
-            stage.process(img_path, {"optimize": False})
-        )
+        result = asyncio.run(stage.process(img_path, {"optimize": False}))
         assert not result.changed
 
     def test_optimize_png(self, tmp_path: Path) -> None:
@@ -318,9 +308,7 @@ class TestOptimize:
 
         img_path = create_test_image(tmp_path / "test.png", 800, 600)
         stage = OptimizeStage()
-        result = asyncio.get_event_loop().run_until_complete(
-            stage.process(img_path, {"optimize": True, "format": "png"})
-        )
+        result = asyncio.run(stage.process(img_path, {"optimize": True, "format": "png"}))
         # Should not error regardless of whether pngquant/oxipng are installed
         assert result.output_path.exists()
         assert result.metadata is not None
@@ -332,9 +320,7 @@ class TestOptimize:
 
         img_path = create_test_image(tmp_path / "test.png", 400, 300)
         stage = OptimizeStage()
-        result = asyncio.get_event_loop().run_until_complete(
-            stage.process(img_path, {"optimize": True, "format": "webp"})
-        )
+        result = asyncio.run(stage.process(img_path, {"optimize": True, "format": "webp"}))
         assert result.output_path.suffix == ".webp"
         assert result.output_path.exists()
 
@@ -416,9 +402,7 @@ class TestDiff:
 
         img_path = create_test_image(tmp_path / "test.png")
         stage = DiffStage()
-        result = asyncio.get_event_loop().run_until_complete(
-            stage.process(img_path, {"diff": {"enabled": True}})
-        )
+        result = asyncio.run(stage.process(img_path, {"diff": {"enabled": True}}))
         assert result.changed
 
     def test_diff_disabled(self, tmp_path: Path) -> None:
@@ -427,9 +411,7 @@ class TestDiff:
 
         img_path = create_test_image(tmp_path / "test.png")
         stage = DiffStage()
-        result = asyncio.get_event_loop().run_until_complete(
-            stage.process(img_path, {"diff": {"enabled": False}})
-        )
+        result = asyncio.run(stage.process(img_path, {"diff": {"enabled": False}}))
         assert result.changed
 
     def test_ignore_regions(self, tmp_path: Path) -> None:

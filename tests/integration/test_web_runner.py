@@ -88,9 +88,7 @@ class TestWebRunnerCaptures:
     def test_capture_dashboard(self, test_server, runner_ctx: RunnerContext) -> None:
         """Capture the dashboard page with device cards."""
         runner = WebRunner()
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_single_capture(runner, runner_ctx, "dashboard")
-        )
+        result = asyncio.run(_run_single_capture(runner, runner_ctx, "dashboard"))
         assert result.success, f"Capture failed: {result.error}"
         assert result.output_path is not None
         assert result.output_path.exists()
@@ -101,9 +99,7 @@ class TestWebRunnerCaptures:
     def test_capture_with_actions(self, test_server, runner_ctx: RunnerContext) -> None:
         """Capture after clicking a device to open detail panel."""
         runner = WebRunner()
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_single_capture(runner, runner_ctx, "detail-view")
-        )
+        result = asyncio.run(_run_single_capture(runner, runner_ctx, "detail-view"))
         assert result.success, f"Capture failed: {result.error}"
         assert result.output_path is not None
         assert result.output_path.exists()
@@ -113,9 +109,7 @@ class TestWebRunnerCaptures:
     def test_capture_with_scroll(self, test_server, runner_ctx: RunnerContext) -> None:
         """Capture settings page after scrolling to advanced section."""
         runner = WebRunner()
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_single_capture(runner, runner_ctx, "settings")
-        )
+        result = asyncio.run(_run_single_capture(runner, runner_ctx, "settings"))
         assert result.success, f"Capture failed: {result.error}"
         assert result.output_path is not None
         assert result.output_path.exists()
@@ -124,9 +118,7 @@ class TestWebRunnerCaptures:
     def test_capture_mobile_viewport(self, test_server, runner_ctx: RunnerContext) -> None:
         """Capture at mobile viewport dimensions."""
         runner = WebRunner()
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_single_capture(runner, runner_ctx, "mobile-admin")
-        )
+        result = asyncio.run(_run_single_capture(runner, runner_ctx, "mobile-admin"))
         assert result.success, f"Capture failed: {result.error}"
         assert result.output_path is not None
         assert result.output_path.exists()
@@ -142,9 +134,7 @@ class TestWebRunnerCaptures:
     def test_capture_with_typing(self, test_server, runner_ctx: RunnerContext) -> None:
         """Capture after typing into search input."""
         runner = WebRunner()
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_single_capture(runner, runner_ctx, "search-typed")
-        )
+        result = asyncio.run(_run_single_capture(runner, runner_ctx, "search-typed"))
         assert result.success, f"Capture failed: {result.error}"
         assert result.output_path is not None
         assert result.output_path.exists()
@@ -153,7 +143,7 @@ class TestWebRunnerCaptures:
     def test_run_all_captures(self, test_server, runner_ctx: RunnerContext) -> None:
         """Run all captures and verify results."""
         runner = WebRunner()
-        results = asyncio.get_event_loop().run_until_complete(_run_all(runner, runner_ctx))
+        results = asyncio.run(_run_all(runner, runner_ctx))
         assert len(results) == 5
         succeeded = [r for r in results if r.success]
         assert len(succeeded) == 5, (
@@ -175,7 +165,7 @@ class TestWebRunnerCaptures:
             manifest=manifest,
         )
         runner = WebRunner()
-        results = asyncio.get_event_loop().run_until_complete(_run_all(runner, ctx))
+        results = asyncio.run(_run_all(runner, ctx))
         assert len(results) == 4  # One less because of skip
         ids = [r.capture_id for r in results]
         assert "dashboard" not in ids
@@ -196,9 +186,7 @@ class TestWebRunnerCaptures:
         resolved = cap.resolve(CaptureDefaults(retry=RetryConfig(max_attempts=1)))
 
         runner = WebRunner()
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_single_capture_resolved(runner, runner_ctx, resolved)
-        )
+        result = asyncio.run(_run_single_capture_resolved(runner, runner_ctx, resolved))
         assert not result.success
         assert result.error is not None
 

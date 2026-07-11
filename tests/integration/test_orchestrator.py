@@ -150,7 +150,7 @@ class TestOrchestratorLocking:
             state_manager=StateManager(state_file),
         )
 
-        report = asyncio.get_event_loop().run_until_complete(orch2.run())
+        report = asyncio.run(orch2.run())
         assert report.state == JobState.FAILED
         assert "Another Phantom instance" in (report.error or "")
 
@@ -185,7 +185,7 @@ class TestOrchestratorRun:
         )
 
         with patch.object(orch, "_create_runner", return_value=mock_runner):
-            report = asyncio.get_event_loop().run_until_complete(orch.run())
+            report = asyncio.run(orch.run())
 
         assert report.state == JobState.COMPLETED
         assert report.captures_total == 2
@@ -226,7 +226,7 @@ class TestOrchestratorRun:
         )
 
         with patch.object(orch, "_create_runner", return_value=mock_runner):
-            report = asyncio.get_event_loop().run_until_complete(orch.run())
+            report = asyncio.run(orch.run())
 
         assert report.state == JobState.COMPLETED
         assert report.commit_sha is None
@@ -267,7 +267,7 @@ class TestOrchestratorRun:
         )
 
         with patch.object(orch, "_create_runner", return_value=mock_runner):
-            report = asyncio.get_event_loop().run_until_complete(orch.run())
+            report = asyncio.run(orch.run())
 
         assert report.state == JobState.COMPLETED
         assert report.captures_total == 1  # Only dashboard
@@ -300,7 +300,7 @@ class TestOrchestratorRun:
         )
 
         with patch.object(orch, "_create_runner", return_value=mock_runner):
-            asyncio.get_event_loop().run_until_complete(orch.run())
+            asyncio.run(orch.run())
 
         # Verify state was recorded
         mgr = StateManager(state_file)
@@ -336,7 +336,7 @@ class TestOrchestratorRun:
         )
 
         with patch.object(orch, "_create_runner", return_value=mock_runner):
-            report = asyncio.get_event_loop().run_until_complete(orch.run())
+            report = asyncio.run(orch.run())
 
         assert report.state == JobState.FAILED
         assert "nonexistent" in (report.error or "")
@@ -418,7 +418,7 @@ class TestOrchestratorQualityGate:
         runner = self._runner_producing(make_image)
         before = self._commit_count(project_dir)
         with patch.object(orch, "_create_runner", return_value=runner):
-            report = asyncio.get_event_loop().run_until_complete(orch.run())
+            report = asyncio.run(orch.run())
         after = self._commit_count(project_dir)
         return report, before, after
 
