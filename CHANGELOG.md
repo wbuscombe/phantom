@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-11
+
+This release freezes the **Phantom Consumer Contract at `contract-version: 1.0.0`**
+(see [`CONTRACT.md`](CONTRACT.md)) — the interface consumer apps and the CI
+smoke job depend on. The contract version is tracked independently of the
+package version and is exposed as `phantom.__contract_version__`.
+
+### Added
+
+- **`CONTRACT.md` (contract-version 1.0.0)** — the frozen boot / config / health
+  / artifact / versioning contract, with an explicit non-goals section.
+- **`phantom.contract` module** — the machine-checkable source of truth:
+  `CONTRACT_VERSION`, `PHANTOM_MODE_ENV`, `is_phantom_mode()`, `app_env()`,
+  `DEFAULT_ARTIFACT_DIR`, `DEFAULT_READY_TIMEOUT_SECONDS`, `LOOPBACK_HOSTS`,
+  `manifest_allowlist()`, `is_host_allowed()`. Package now exposes
+  `phantom.__contract_version__` / `phantom.CONTRACT_VERSION`.
+- **Contract conformance suite** (`tests/contract/`, 77 tests) mechanically
+  verifying every Part-2 promise: mode detection, `PHANTOM_MODE=1` injection at
+  all four runners' spawn points, schema parsing incl. unknown-key tolerance,
+  ready-check timeout declaration, artifact path safety, and the network
+  allowlist.
+- **`docs/smoke-job-spec.md`** — specification for the reusable CI smoke job
+  Step 3 will implement (inputs, steps, pass/fail semantics, consumer
+  requirements), written against contract 1.0.0.
+
+### Changed
+
+- **`PHANTOM_MODE=1` is now guaranteed by Phantom itself** for every launched
+  consumer app, across the `web`, `docker-compose`, `tui`, and `desktop`
+  runners (via `phantom.contract.app_env()`). Previously demo mode activated
+  only if the invoking shell or the manifest's `setup.run.env` set the
+  variable; it is now injected by default (a manifest's explicit `run.env` may
+  still override it). This makes the boot contract hold for direct/local
+  invocations, not just the reusable CI workflow.
+- **Version bumped to 0.4.0.** Consumers pin `phantom-docs==0.4.*` and assert
+  `phantom.__contract_version__ == "1.x"` ([`CONTRACT.md` §5](CONTRACT.md#5-versioning-rules)).
+
 ### Security
 
 - **Publish quality gate** (`Orchestrator._publish`): `phantom run` no longer commits or pushes a capture that fails an **error-severity** quality check (blank / too-small / bad-dimensions). Pass `--force` to publish anyway (for intentional low-entropy frames such as splash screens). Warning-severity issues remain advisory and still publish. CI is unaffected because it runs with `--skip-publish`. A blocked publish exits non-zero and sets `JobReport.blocked_by_quality`.
