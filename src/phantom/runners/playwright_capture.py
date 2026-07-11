@@ -201,7 +201,18 @@ class PlaywrightCaptureMixin:
                             resp = await client.get(ready_check.url)
                             if resp.status_code == ready_check.status_code:
                                 return True
-                    except (httpx.ConnectError, httpx.TimeoutException):
+                    except httpx.TransportError:
+                        # Transient during container/app startup. A just-started
+                        # server may accept the TCP connection before it can serve
+                        # a complete response, so the request is reset mid-flight
+                        # (httpx.ReadError / RemoteProtocolError), or the port is
+                        # not open yet (ConnectError), or the request times out.
+                        # TransportError is the httpx base for all connect/read/
+                        # protocol/timeout errors — every one means "not ready
+                        # yet": swallow it and keep polling until the deadline.
+                        # (Previously only ConnectError/TimeoutException were
+                        # caught, so a startup-time ReadError/RemoteProtocolError
+                        # escaped and aborted launch() — the docker-runner CI flake.)
                         pass
 
                 case "tcp":

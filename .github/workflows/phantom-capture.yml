@@ -8,9 +8,9 @@ on:
         required: true
         type: string
       phantom-version:
-        description: "Phantom PyPI version constraint (e.g. '>=0.3,<0.4') or git ref (e.g. main)"
+        description: "Phantom PyPI version constraint (e.g. '>=0.4,<0.5') or git ref (e.g. main)"
         required: false
-        default: ">=0.3,<0.4"
+        default: ">=0.4,<0.5"
         type: string
       publish-strategy:
         description: "How to publish screenshots: direct, pr, or artifacts-only"
@@ -64,12 +64,12 @@ jobs:
 
     steps:
       - name: Checkout calling repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
 
       - name: Setup Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
@@ -95,7 +95,7 @@ jobs:
       # ── Web runner dependencies ──
       - name: Cache Playwright browsers (web)
         if: inputs.project-type == 'web'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
@@ -108,12 +108,12 @@ jobs:
       # ── TUI runner dependencies ──
       - name: Setup Rust toolchain (tui)
         if: inputs.project-type == 'tui'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable (pinned 2026-07-11)
 
       - name: Cache silicon binary (tui)
         if: inputs.project-type == 'tui' && inputs.rust-cache
         id: silicon-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/.cargo/bin/silicon
@@ -166,7 +166,7 @@ jobs:
       # ── Cache analyst state for incremental CI runs ──
       - name: Cache analyst state
         if: inputs.ai-analyst == true || inputs.ai-auto == true
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .phantom-state.json
           key: phantom-analyst-state-${{ github.repository }}-${{ github.ref }}
@@ -209,7 +209,7 @@ jobs:
       # before a human reviews it (artifacts are world-readable on public repos).
       - name: Upload screenshots
         if: success() && inputs.upload-screenshots-artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: phantom-screenshots
           path: docs/screenshots/

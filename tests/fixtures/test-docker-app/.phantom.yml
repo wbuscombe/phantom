@@ -9,9 +9,13 @@ setup:
   run:
     command: "unused"
     ready_check:
+      # 60s (was 30s) gives cold-start headroom on a busy CI runner pulling
+      # nginx:alpine; combined with the TransportError-tolerant poll in
+      # playwright_capture._wait_for_ready this de-flakes the docker-runner
+      # integration tests without a blind whole-suite retry.
       type: http
       url: "http://localhost:9754"
-      timeout: 30
+      timeout: 60
       interval: 1
 
 capture_defaults:
