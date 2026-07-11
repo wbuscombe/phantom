@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from phantom.conductor.requirements import check_requirements
+from phantom.contract import app_env as contract_app_env
 from phantom.exceptions import RunnerLaunchError, RunnerSetupError
 from phantom.runners.base import BaseRunner, CaptureResult, RunnerContext
 from phantom.utils.process import run_command, run_shell
@@ -127,15 +128,16 @@ class DesktopRunner(BaseRunner):
             )
 
         # Build env for the application
-        app_env = {**os.environ, **(run_config.env or {})}
-        app_env["DISPLAY"] = self._display
+        # Contract v1.0.0 §1: guarantee PHANTOM_MODE=1 in the app environment.
+        app_environ = {**os.environ, **contract_app_env(run_config.env)}
+        app_environ["DISPLAY"] = self._display
 
         # Start the application
         ctx.logger.info("starting_app", command=run_config.command)
         self._app_proc = await asyncio.create_subprocess_shell(
             run_config.command,
             cwd=str(ctx.project_dir),
-            env=app_env,
+            env=app_environ,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

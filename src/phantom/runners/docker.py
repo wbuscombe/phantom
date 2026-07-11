@@ -11,6 +11,7 @@ import contextlib
 import structlog
 
 from phantom.conductor.requirements import check_requirements
+from phantom.contract import app_env
 from phantom.exceptions import RunnerLaunchError, RunnerSetupError
 from phantom.runners.base import BaseRunner, RunnerContext
 from phantom.runners.playwright_capture import PlaywrightCaptureMixin
@@ -51,7 +52,7 @@ class DockerRunner(PlaywrightCaptureMixin, BaseRunner):
 
         # Run build commands (e.g. docker compose build)
         if setup.build:
-            env = setup.run.env or {}
+            env = app_env(setup.run.env)
             for cmd in setup.build:
                 ctx.logger.info("build_step", command=cmd)
                 result = await run_shell(
@@ -76,8 +77,18 @@ class DockerRunner(PlaywrightCaptureMixin, BaseRunner):
         if setup.services:
             up_cmd.extend(setup.services)
 
+        # Contract v1.0.0 §1: PHANTOM_MODE=1 is set in the environment used to
+        # invoke `docker compose up` so Compose interpolation can forward it to
+        # the app service. The consumer's compose file MUST propagate it (e.g.
+        # `environment: [PHANTOM_MODE]`) — see CONTRACT.md §1 and the smoke-job
+        # spec's "what a consumer repo must provide".
         ctx.logger.info("docker_compose_up", command=" ".join(up_cmd))
-        result = await run_command(*up_cmd, cwd=ctx.project_dir, timeout=setup.runner_timeout)
+        result = await run_command(
+            *up_cmd,
+            cwd=ctx.project_dir,
+            env=app_env(run_config.env),
+            timeout=setup.runner_timeout,
+        )
         if result.returncode != 0:
             # Capture container logs for diagnostics
             logs = await self._capture_compose_logs(ctx)

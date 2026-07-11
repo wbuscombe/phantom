@@ -23,6 +23,7 @@ import pyte
 import structlog
 
 from phantom.conductor.requirements import check_requirements
+from phantom.contract import app_env
 from phantom.exceptions import RunnerLaunchError, RunnerSetupError
 from phantom.runners.base import BaseRunner, CaptureResult, RunnerContext
 from phantom.utils.process import run_command, run_shell
@@ -218,7 +219,8 @@ class TerminalRunner(BaseRunner):
         self._stream = stream
 
         # Fork with pty
-        env = {**os.environ, **(run_config.env or {})}
+        # Contract v1.0.0 §1: guarantee PHANTOM_MODE=1 in the app environment.
+        env = {**os.environ, **app_env(run_config.env)}
         env["TERM"] = "xterm-256color"
         env["COLUMNS"] = str(term_width)
         env["LINES"] = str(term_height)
