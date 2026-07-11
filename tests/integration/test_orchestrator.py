@@ -150,7 +150,7 @@ class TestOrchestratorLocking:
             state_manager=StateManager(state_file),
         )
 
-        report = asyncio.get_event_loop().run_until_complete(orch2.run())
+        report = asyncio.run(orch2.run())
         assert report.state == JobState.FAILED
         assert "Another Phantom instance" in (report.error or "")
 
@@ -185,7 +185,7 @@ class TestOrchestratorRun:
         )
 
         with patch.object(orch, "_create_runner", return_value=mock_runner):
-            report = asyncio.get_event_loop().run_until_complete(orch.run())
+            report = asyncio.run(orch.run())
 
         assert report.state == JobState.COMPLETED
         assert report.captures_total == 2
@@ -226,7 +226,7 @@ class TestOrchestratorRun:
         )
 
         with patch.object(orch, "_create_runner", return_value=mock_runner):
-            report = asyncio.get_event_loop().run_until_complete(orch.run())
+            report = asyncio.run(orch.run())
 
         assert report.state == JobState.COMPLETED
         assert report.commit_sha is None
@@ -267,7 +267,7 @@ class TestOrchestratorRun:
         )
 
         with patch.object(orch, "_create_runner", return_value=mock_runner):
-            report = asyncio.get_event_loop().run_until_complete(orch.run())
+            report = asyncio.run(orch.run())
 
         assert report.state == JobState.COMPLETED
         assert report.captures_total == 1  # Only dashboard
@@ -300,7 +300,7 @@ class TestOrchestratorRun:
         )
 
         with patch.object(orch, "_create_runner", return_value=mock_runner):
-            asyncio.get_event_loop().run_until_complete(orch.run())
+            asyncio.run(orch.run())
 
         # Verify state was recorded
         mgr = StateManager(state_file)
@@ -336,7 +336,202 @@ class TestOrchestratorRun:
         )
 
         with patch.object(orch, "_create_runner", return_value=mock_runner):
-            report = asyncio.get_event_loop().run_until_complete(orch.run())
+            report = asyncio.run(orch.run())
 
         assert report.state == JobState.FAILED
         assert "nonexistent" in (report.error or "")
+
+
+class TestOrchestratorQualityGate:
+    """The publish step must not commit/push frames that fail an
+    error-severity quality check unless --force is given (RC-A.1)."""
+
+    @staticmethod
+    def _runner_producing(make_image):
+        """Build a mock runner whose every capture writes ``make_image()``."""
+        from phantom.runners.base import BaseRunner, CaptureResult, RunnerContext
+
+        class _Runner(BaseRunner):
+            async def setup(self, ctx: RunnerContext) -> None:
+                pass
+
+            async def launch(self, ctx: RunnerContext) -> None:
+                pass
+
+            async def capture(self, ctx: RunnerContext, capture_def) -> CaptureResult:
+                output_path = ctx.raw_output_dir / f"{capture_def.id}.png"
+                make_image().save(output_path)
+                return CaptureResult(
+                    capture_id=capture_def.id,
+                    success=True,
+                    output_path=output_path,
+                    duration_ms=10,
+                )
+
+            async def teardown(self, ctx: RunnerContext) -> None:
+                pass
+
+        return _Runner()
+
+    @staticmethod
+    def _blank_image():
+        # Solid white -> blank_detection (uniformity 1.0) AND tiny file: error severity.
+        return Image.new("RGB", (800, 600), (255, 255, 255))
+
+    @staticmethod
+    def _warning_only_image():
+        # Wide RGB noise: rich content (no blank/size/dimension errors) but a
+        # 6:1 aspect ratio -> aspect_ratio WARNING only, so it should still publish.
+        import numpy as np
+
+        rng = np.random.default_rng(0)
+        arr = rng.integers(0, 256, size=(200, 1200, 3), dtype="uint8")
+        return Image.fromarray(arr, "RGB")
+
+    @staticmethod
+    def _commit_count(project_dir: Path) -> str:
+        result = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip()
+
+    def _run(self, tmp_path: Path, make_image, **option_kwargs):
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        _init_test_repo(project_dir)
+        manifest_path = project_dir / ".phantom.yml"
+        _write_test_manifest(manifest_path, project_dir)
+        manifest = load_manifest(str(manifest_path))
+
+        options = JobOptions(
+            local_project=project_dir, **option_kwargs
+        )  # publish ON unless overridden
+        orch = Orchestrator(
+            manifest=manifest,
+            options=options,
+            workspace_root=tmp_path / "workspace",
+            state_manager=StateManager(tmp_path / "state.json"),
+        )
+        runner = self._runner_producing(make_image)
+        before = self._commit_count(project_dir)
+        with patch.object(orch, "_create_runner", return_value=runner):
+            report = asyncio.run(orch.run())
+        after = self._commit_count(project_dir)
+        return report, before, after
+
+    @pytest.mark.integration
+    def test_publish_blocked_on_quality_failure(self, tmp_path: Path) -> None:
+        """An error-severity quality failure must block commit/push (no --force)."""
+        report, before, after = self._run(tmp_path, self._blank_image, force=False)
+
+        assert report.commit_sha is None, "blocked publish must not produce a commit"
+        assert report.blocked_by_quality is True
+        assert after == before, "no new commit should be created when blocked"
+
+    @pytest.mark.integration
+    def test_force_overrides_quality_gate(self, tmp_path: Path) -> None:
+        """--force publishes even when quality fails (protects onboarded projects/CI)."""
+        report, before, after = self._run(tmp_path, self._blank_image, force=True)
+
+        assert report.blocked_by_quality is False
+        assert report.commit_sha is not None, "--force must publish despite quality failure"
+        assert after != before, "a commit should be created when forced"
+
+    @pytest.mark.integration
+    def test_warning_severity_still_publishes(self, tmp_path: Path) -> None:
+        """Warning-only issues (e.g. extreme aspect ratio) must NOT block publish."""
+        report, before, after = self._run(tmp_path, self._warning_only_image, force=False)
+
+        assert report.blocked_by_quality is False
+        assert report.commit_sha is not None, "warning-only frames should still publish"
+        assert after != before
+
+    # ── CI fail-closed path: --skip-publish + --fail-on-quality-error (RC-A.1/CI) ──
+
+    @pytest.mark.integration
+    def test_skip_publish_fail_on_quality_marks_blocked(self, tmp_path: Path) -> None:
+        """In --skip-publish mode (used by CI), --fail-on-quality-error must flag an
+        error-severity run as blocked so the CLI exits non-zero and CI skips commit."""
+        report, before, after = self._run(
+            tmp_path, self._blank_image, skip_publish=True, fail_on_quality_error=True
+        )
+
+        assert report.blocked_by_quality is True
+        assert report.commit_sha is None  # --skip-publish never commits
+        assert after == before
+
+    @pytest.mark.integration
+    def test_skip_publish_without_flag_not_blocked(self, tmp_path: Path) -> None:
+        """--skip-publish alone (no fail-on-quality flag) must NOT block, even on a
+        bad frame — preserves the local 'inspect without committing' workflow."""
+        report, _before, _after = self._run(tmp_path, self._blank_image, skip_publish=True)
+
+        assert report.blocked_by_quality is False
+
+    @pytest.mark.integration
+    def test_skip_publish_force_overrides_fail_on_quality(self, tmp_path: Path) -> None:
+        """--force overrides the CI quality gate (wireable into CI via an input)."""
+        report, _before, _after = self._run(
+            tmp_path,
+            self._blank_image,
+            skip_publish=True,
+            fail_on_quality_error=True,
+            force=True,
+        )
+
+        assert report.blocked_by_quality is False
+
+
+class TestCIQualityGateCLI:
+    """End-to-end CLI exit codes for `phantom run --skip-publish --fail-on-quality-error`."""
+
+    @staticmethod
+    def _project(tmp_path: Path) -> Path:
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        _init_test_repo(project_dir)
+        _write_test_manifest(project_dir / ".phantom.yml", project_dir)
+        return project_dir
+
+    @staticmethod
+    def _invoke(project_dir: Path, make_image, extra_args: list[str]):
+        from click.testing import CliRunner
+
+        from phantom.cli import main
+
+        runner = TestOrchestratorQualityGate._runner_producing(make_image)
+        with patch("phantom.runners.get_runner", return_value=runner):
+            return CliRunner().invoke(
+                main, ["run", "-p", str(project_dir), "--skip-publish", *extra_args]
+            )
+
+    @pytest.mark.integration
+    def test_exit_nonzero_on_error_frame(self, tmp_path: Path) -> None:
+        result = self._invoke(
+            self._project(tmp_path),
+            TestOrchestratorQualityGate._blank_image,
+            ["--fail-on-quality-error"],
+        )
+        assert result.exit_code == 1
+        assert "quality" in result.output.lower()
+
+    @pytest.mark.integration
+    def test_exit_zero_when_quality_ok(self, tmp_path: Path) -> None:
+        result = self._invoke(
+            self._project(tmp_path),
+            TestOrchestratorQualityGate._warning_only_image,
+            ["--fail-on-quality-error"],
+        )
+        assert result.exit_code == 0
+
+    @pytest.mark.integration
+    def test_force_overrides_exit(self, tmp_path: Path) -> None:
+        result = self._invoke(
+            self._project(tmp_path),
+            TestOrchestratorQualityGate._blank_image,
+            ["--fail-on-quality-error", "--force"],
+        )
+        assert result.exit_code == 0

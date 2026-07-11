@@ -56,6 +56,7 @@ class JobOptions:
     dry_run: bool = False
     skip_publish: bool = False
     force: bool = False
+    fail_on_quality_error: bool = False  # CI: fail the run on error-severity quality
     capture_id: str | None = None
     capture_ids: list[str] | None = None  # For incremental: specific captures to run
     group: str | None = None
@@ -85,6 +86,7 @@ class JobReport:
     pipeline_results: list[PipelineResult] = field(default_factory=list)
     trigger_source: str = "cli"
     skipped_unchanged: bool = False
+    blocked_by_quality: bool = False
     avg_diff_pct: float | None = None
     quality_reports: list[Any] = field(default_factory=list)
     consistency_report: Any | None = None
@@ -181,10 +183,24 @@ class Orchestrator:
             # Copy processed files to project dir
             self._copy_outputs_to_project(pipeline_results, workspace)
 
-            # Quality checks (warnings only, don't block)
+            # Quality checks. Warnings are advisory; error-severity issues gate
+            # the publish step (see _publish) and, with --fail-on-quality-error,
+            # fail the whole run.
             quality_reports, consistency_report = self._check_quality(pipeline_results, workspace)
             report.quality_reports = quality_reports
             report.consistency_report = consistency_report
+
+            # CI fail-closed (RC-A.1/CI): in --skip-publish mode the publish gate
+            # below never runs, so the CI workflow's own commit step would push a
+            # bad frame. --fail-on-quality-error flags the run as blocked on any
+            # error-severity failure (the CLI then exits non-zero and the
+            # workflow's commit/push steps are skipped). --force overrides.
+            if (
+                self._options.fail_on_quality_error
+                and not self._options.force
+                and any(not getattr(qr, "passed", True) for qr in quality_reports)
+            ):
+                report.blocked_by_quality = True
 
             # Publish
             self._transition(JobState.PUBLISHING)
@@ -467,6 +483,29 @@ class Orchestrator:
         """Handle README updates and git publishing."""
         if self._options.skip_publish:
             logger.info("publish_skipped", reason="--skip-publish flag")
+            return
+
+        # Quality gate (RC-A.1): never commit/push a capture that failed an
+        # error-severity quality check unless --force was given. Warnings stay
+        # advisory; only error-severity issues (blank/too-small/bad-dimensions)
+        # block, so intentional low-entropy frames (splash screens) still
+        # publish. QualityReport.passed is False iff an error-severity issue
+        # was found (see analyst.quality.QualityChecker).
+        failed = [qr for qr in report.quality_reports if not getattr(qr, "passed", True)]
+        if failed and not self._options.force:
+            report.blocked_by_quality = True
+            error_issues = [
+                issue.message
+                for qr in failed
+                for issue in getattr(qr, "issues", [])
+                if getattr(issue, "severity", "") == "error"
+            ]
+            logger.error(
+                "publish_blocked_quality",
+                captures=[getattr(qr, "capture_id", "?") for qr in failed],
+                issues=error_issues,
+                hint="re-run with --force to publish anyway",
+            )
             return
 
         # Update README sentinels

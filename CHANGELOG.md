@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-11
+
+This release freezes the **Phantom Consumer Contract at `contract-version: 1.0.0`**
+(see [`CONTRACT.md`](CONTRACT.md)) — the interface consumer apps and the CI
+smoke job depend on. The contract version is tracked independently of the
+package version and is exposed as `phantom.__contract_version__`.
+
+### Added
+
+- **`CONTRACT.md` (contract-version 1.0.0)** — the frozen boot / config / health
+  / artifact / versioning contract, with an explicit non-goals section.
+- **`phantom.contract` module** — the machine-checkable source of truth:
+  `CONTRACT_VERSION`, `PHANTOM_MODE_ENV`, `is_phantom_mode()`, `app_env()`,
+  `DEFAULT_ARTIFACT_DIR`, `DEFAULT_READY_TIMEOUT_SECONDS`, `LOOPBACK_HOSTS`,
+  `manifest_allowlist()`, `is_host_allowed()`. Package now exposes
+  `phantom.__contract_version__` / `phantom.CONTRACT_VERSION`.
+- **Contract conformance suite** (`tests/contract/`, 77 tests) mechanically
+  verifying every Part-2 promise: mode detection, `PHANTOM_MODE=1` injection at
+  all four runners' spawn points, schema parsing incl. unknown-key tolerance,
+  ready-check timeout declaration, artifact path safety, and the network
+  allowlist.
+- **`docs/smoke-job-spec.md`** — specification for the reusable CI smoke job
+  Step 3 will implement (inputs, steps, pass/fail semantics, consumer
+  requirements), written against contract 1.0.0.
+
+### Changed
+
+- **`PHANTOM_MODE=1` is now guaranteed by Phantom itself** for every launched
+  consumer app, across the `web`, `docker-compose`, `tui`, and `desktop`
+  runners (via `phantom.contract.app_env()`). Previously demo mode activated
+  only if the invoking shell or the manifest's `setup.run.env` set the
+  variable; it is now injected by default (a manifest's explicit `run.env` may
+  still override it). This makes the boot contract hold for direct/local
+  invocations, not just the reusable CI workflow.
+- **Version bumped to 0.4.0.** Consumers pin `phantom-docs==0.4.*` and assert
+  `phantom.__contract_version__ == "1.x"` ([`CONTRACT.md` §5](CONTRACT.md#5-versioning-rules)).
+
+### Security
+
+- **Publish quality gate** (`Orchestrator._publish`): `phantom run` no longer commits or pushes a capture that fails an **error-severity** quality check (blank / too-small / bad-dimensions). Pass `--force` to publish anyway (for intentional low-entropy frames such as splash screens). Warning-severity issues remain advisory and still publish. CI is unaffected because it runs with `--skip-publish`. A blocked publish exits non-zero and sets `JobReport.blocked_by_quality`.
+- **CI screenshot artifact is now opt-in and success-only**: the reusable `phantom-capture.yml` uploads `docs/screenshots/` as a workflow artifact only when the new `upload-screenshots-artifact` input is `true` **and** the run succeeded (previously `if: always()`). This prevents a sensitive or failed frame from becoming externally downloadable before review — independent of the `pr` publish gate.
+- **CI commit path now fails closed on quality**: the local publish gate above does not run in CI (which uses `--skip-publish`), so previously the workflow's own git steps committed a frame regardless of quality. The reusable `phantom-capture.yml` now runs `phantom run --skip-publish --fail-on-quality-error` — an error-severity capture exits non-zero, fails the job, and the now-explicitly `success()`-gated commit/push steps are skipped, so nothing is committed. New `force-publish` workflow input (and `phantom run --fail-on-quality-error` CLI flag) override the gate; `--force` still bypasses everything.
+
+### Fixed
+
+- **Corrected auto-rollback documentation**: snapshots/rollback are a **manual** CLI tool, not an automatic safety net. The orchestrator never auto-creates snapshots and a failing quality check does not trigger a rollback; rollback is forward-only and cannot remove an already-pushed frame. Updated the `SnapshotManager` docstring, the 0.3.0 changelog entry, and the collaborator guide accordingly.
+
 ## [0.3.0] - 2026-02-28
 
 ### Added
@@ -14,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Desktop Runner** for native GUI apps (SDL2, Swing, Qt, GTK) via Xvfb + xdotool + ImageMagick. Supports click, keystroke, type, drag, wait, and raw xdotool actions.
 - **LLM provider abstraction** (`providers.py`) with `LLMProvider` protocol, `AnthropicProvider`, and per-model pricing table. Configurable via `PHANTOM_LLM_PROVIDER` and `PHANTOM_LLM_MODEL` env vars.
 - **Screenshot visual review** (`--review` flag) sends captured screenshots to vision API for quality scoring, issue detection, and improvement suggestions. Off by default, $0.30 budget cap.
-- **Rollback mechanism** with `SnapshotManager` for recording pre-publish state. New CLI commands: `phantom snapshots` and `phantom rollback`.
+- **Manual snapshot/rollback CLI** (`phantom snapshots`, `phantom rollback`) via `SnapshotManager` to record and restore screenshot state on demand. (Manual only — not triggered automatically during a run; rollback is forward-only and cannot remove an already-pushed frame.)
 - **Bot commit squash strategy** (`strategy: squash` in publishing config) commits to a side branch and squash-merges for a cleaner git history — one commit per screenshot update cycle.
 - **Enhanced bot commit messages** with per-capture detail: updated/unchanged lists, quality summary, and capture count in subject line.
 - **Desktop runner deps** in reusable workflow: xdotool and imagemagick added alongside xvfb.

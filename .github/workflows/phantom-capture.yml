@@ -37,6 +37,16 @@ on:
         required: false
         default: false
         type: boolean
+      upload-screenshots-artifact:
+        description: "Upload captured screenshots as a workflow artifact (debug only; OFF by default to avoid exposing frames before review)"
+        required: false
+        default: false
+        type: boolean
+      force-publish:
+        description: "Publish screenshots even if a capture fails an error-severity quality check (bypasses the CI quality gate via phantom --force)"
+        required: false
+        default: false
+        type: boolean
     secrets:
       github-token:
         description: "GitHub token for pushing/PRs"
@@ -172,7 +182,14 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.anthropic-key }}
           PHANTOM_MODE: "1"
         run: |
-          FLAGS="--project . --skip-publish"
+          # --fail-on-quality-error makes this step exit non-zero on an
+          # error-severity capture, which fails the job and skips the
+          # success-gated commit/push steps below (fail-closed). force-publish
+          # passes --force to override the gate for intentionally low-signal frames.
+          FLAGS="--project . --skip-publish --fail-on-quality-error"
+          if [[ "${{ inputs.force-publish }}" == "true" ]]; then
+            FLAGS="$FLAGS --force"
+          fi
           if [[ "${{ inputs.ai-auto }}" == "true" ]]; then
             FLAGS="$FLAGS --ai-auto"
           else
@@ -185,9 +202,13 @@ jobs:
           fi
           phantom run $FLAGS
 
-      # ── Upload artifacts (always, for debugging) ──
+      # ── Upload artifacts (opt-in, success-only) ──
+      # Captured frames are committed by the publish steps below; the artifact
+      # is only useful for debugging. It is gated on success() AND an explicit
+      # opt-in so a sensitive/failed frame is never made externally downloadable
+      # before a human reviews it (artifacts are world-readable on public repos).
       - name: Upload screenshots
-        if: always()
+        if: success() && inputs.upload-screenshots-artifact
         uses: actions/upload-artifact@v4
         with:
           name: phantom-screenshots
@@ -195,8 +216,10 @@ jobs:
           if-no-files-found: warn
 
       # ── Publish: direct commit ──
+      # success() gates the commit on the capture/quality step passing: a
+      # fail-on-quality-error exit skips this step so no bad frame is committed.
       - name: Publish (direct)
-        if: inputs.publish-strategy == 'direct'
+        if: success() && inputs.publish-strategy == 'direct'
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |
@@ -212,7 +235,7 @@ jobs:
 
       # ── Publish: PR ──
       - name: Publish (pr)
-        if: inputs.publish-strategy == 'pr'
+        if: success() && inputs.publish-strategy == 'pr'
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         run: |

@@ -8,6 +8,7 @@ from __future__ import annotations
 import structlog
 
 from phantom.conductor.requirements import check_requirements
+from phantom.contract import app_env
 from phantom.exceptions import RunnerLaunchError, RunnerSetupError
 from phantom.runners.base import BaseRunner, RunnerContext
 from phantom.runners.playwright_capture import PlaywrightCaptureMixin
@@ -33,7 +34,9 @@ class WebRunner(PlaywrightCaptureMixin, BaseRunner):
 
         # Run build commands
         if setup.build:
-            env = setup.run.env or {}
+            # Contract v1.0.0 §1: PHANTOM_MODE=1 is guaranteed for the whole
+            # launch lifecycle, including build steps.
+            env = app_env(setup.run.env)
             for cmd in setup.build:
                 ctx.logger.info("build_step", command=cmd)
                 result = await run_shell(
@@ -51,7 +54,8 @@ class WebRunner(PlaywrightCaptureMixin, BaseRunner):
         """Start the dev server and wait for readiness."""
         setup = ctx.manifest.setup
         run_config = setup.run
-        env = run_config.env or {}
+        # Contract v1.0.0 §1: guarantee PHANTOM_MODE=1 in the app environment.
+        env = app_env(run_config.env)
 
         # Start the application process
         self._app_process = await start_process(

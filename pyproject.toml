@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "phantom-docs"
-version = "0.3.0"
+version = "0.4.0"
 description = "Automated documentation asset generation for software projects"
 readme = "README.md"
 license = "MIT"
@@ -91,6 +91,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.mypy]
 python_version = "3.12"
+warn_unused_ignores = false
 strict = true
 warn_return_any = true
 warn_unused_configs = true

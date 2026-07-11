@@ -127,7 +127,7 @@ class TestGitAdd:
         # Create a file
         (tmp_path / "test.txt").write_text("hello")
 
-        asyncio.get_event_loop().run_until_complete(git_add(tmp_path, ["test.txt"]))
+        asyncio.run(git_add(tmp_path, ["test.txt"]))
 
         # Verify it's staged
         result = subprocess.run(
@@ -161,12 +161,10 @@ class TestGitCommit:
         )
 
         (tmp_path / "file.txt").write_text("content")
-        asyncio.get_event_loop().run_until_complete(git_add(tmp_path, ["file.txt"]))
+        asyncio.run(git_add(tmp_path, ["file.txt"]))
 
         author = CommitAuthor(name="Phantom Bot", email="phantom@noreply")
-        sha = asyncio.get_event_loop().run_until_complete(
-            git_commit(tmp_path, "test commit\n\n[skip ci]", author)
-        )
+        sha = asyncio.run(git_commit(tmp_path, "test commit\n\n[skip ci]", author))
 
         assert sha is not None
         assert len(sha) == 40  # Full SHA
@@ -212,7 +210,7 @@ class TestGitCommit:
         )
 
         author = CommitAuthor()
-        sha = asyncio.get_event_loop().run_until_complete(git_commit(tmp_path, "empty", author))
+        sha = asyncio.run(git_commit(tmp_path, "empty", author))
         assert sha is None
 
 
@@ -228,9 +226,7 @@ class TestStaleDetection:
         (screenshots_dir / "readme.txt").write_text("not a screenshot")
 
         known = {"docs/screenshots/active.png"}
-        stale = asyncio.get_event_loop().run_until_complete(
-            find_stale_screenshots(tmp_path, "docs/screenshots", known)
-        )
+        stale = asyncio.run(find_stale_screenshots(tmp_path, "docs/screenshots", known))
         assert "docs/screenshots/orphan.png" in stale
         assert "docs/screenshots/active.png" not in stale
         # Non-image files should not be flagged
@@ -244,15 +240,11 @@ class TestStaleDetection:
         (screenshots_dir / "a.png").write_text("a")
 
         known = {"docs/screenshots/a.png"}
-        stale = asyncio.get_event_loop().run_until_complete(
-            find_stale_screenshots(tmp_path, "docs/screenshots", known)
-        )
+        stale = asyncio.run(find_stale_screenshots(tmp_path, "docs/screenshots", known))
         assert stale == []
 
     def test_empty_directory(self, tmp_path: Path) -> None:
         from phantom.publisher.git import find_stale_screenshots
 
-        stale = asyncio.get_event_loop().run_until_complete(
-            find_stale_screenshots(tmp_path, "nonexistent", set())
-        )
+        stale = asyncio.run(find_stale_screenshots(tmp_path, "nonexistent", set()))
         assert stale == []

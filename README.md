@@ -97,6 +97,28 @@ cat path/to/phantom/docs/onboarding-prompt.md | pbcopy  # macOS
 # Then paste into Claude Code
 ```
 
+## Consumer Contract
+
+Phantom freezes the interface your app and CI depend on in
+**[`CONTRACT.md`](CONTRACT.md)** — currently **`contract-version: 1.0.0`**. It
+covers the `PHANTOM_MODE=1` boot semantics, the `.phantom.yml` schema
+(unknown keys are always ignored, never fatal), the readiness/timeout signal,
+and the `docs/screenshots/` artifact directory.
+
+Pin the package by minor range and assert on the contract version — the same
+discipline as pinning a Docker image tag rather than `latest`:
+
+```python
+import phantom
+assert phantom.__contract_version__.startswith("1.")   # contract major 1
+# requirements: phantom-docs==0.4.*
+```
+
+Phantom guarantees `PHANTOM_MODE=1` in your app's environment on every capture,
+across all runners. Conformance is machine-checked in
+[`tests/contract/`](tests/contract/); the CI smoke job that consumes the
+contract is specified in [`docs/smoke-job-spec.md`](docs/smoke-job-spec.md).
+
 ## Runners
 
 Phantom supports multiple runner types for different kinds of applications:
@@ -206,6 +228,7 @@ See [docs/manifest-reference.md](docs/manifest-reference.md) for the complete fi
 
 | Variable | Description |
 |----------|-------------|
+| `PHANTOM_MODE` | Set to `1` in your app's environment by Phantom on every capture; your app switches to deterministic demo mode. See [`CONTRACT.md`](CONTRACT.md). |
 | `PHANTOM_WEBHOOK_SECRET` | HMAC secret for webhook verification |
 | `PHANTOM_MANIFEST_MAP` | Repo-to-manifest mapping for `serve` mode |
 

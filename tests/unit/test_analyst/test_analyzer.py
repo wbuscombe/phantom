@@ -444,9 +444,7 @@ class TestDisplayNameExtraction:
         analyzer = ProjectAnalyzer(api_key="test-key")
         import asyncio
 
-        yaml_str = asyncio.get_event_loop().run_until_complete(
-            analyzer.generate_manifest(plan, tui_project)
-        )
+        yaml_str = asyncio.run(analyzer.generate_manifest(plan, tui_project))
         assert "name: My TUI" in yaml_str
 
 

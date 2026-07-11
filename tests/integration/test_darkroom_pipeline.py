@@ -49,7 +49,7 @@ class TestFullPipeline:
         config = ProcessingConfig()
 
         pipeline = DarkroomPipeline()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             pipeline.process(
                 capture_id="dashboard",
                 raw_path=raw_path,
@@ -82,7 +82,7 @@ class TestFullPipeline:
         config.border.style = "none"
 
         pipeline = DarkroomPipeline()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             pipeline.process(
                 capture_id="clean",
                 raw_path=raw_path,
@@ -109,7 +109,7 @@ class TestFullPipeline:
         config.border.style = "none"  # Skip shadow for cleaner size assertion
 
         pipeline = DarkroomPipeline()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             pipeline.process(
                 capture_id="retina",
                 raw_path=raw_path,
@@ -141,7 +141,7 @@ class TestFullPipeline:
         config.border.style = "none"
 
         pipeline = DarkroomPipeline()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             pipeline.process(
                 capture_id="same",
                 raw_path=raw_path,
@@ -176,7 +176,7 @@ class TestFullPipeline:
         config.border.style = "none"
 
         pipeline = DarkroomPipeline()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             pipeline.process(
                 capture_id="new",
                 raw_path=raw_dir / "new.png",
@@ -201,7 +201,7 @@ class TestFullPipeline:
 
         config = ProcessingConfig()
         pipeline = DarkroomPipeline()
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             pipeline.process(
                 capture_id="original",
                 raw_path=raw_path,
@@ -230,9 +230,7 @@ class TestFullPipeline:
         config.border.style = "none"
 
         pipeline = DarkroomPipeline()
-        results = asyncio.get_event_loop().run_until_complete(
-            pipeline.process_batch(captures, output_dir, config)
-        )
+        results = asyncio.run(pipeline.process_batch(captures, output_dir, config))
 
         assert len(results) == 3
         assert all(r.output_path.exists() for r in results)
@@ -250,7 +248,7 @@ class TestFullPipeline:
         config = ProcessingConfig()
 
         pipeline = DarkroomPipeline()
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             pipeline.process(
                 capture_id="shadow",
                 raw_path=raw_path,

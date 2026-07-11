@@ -90,7 +90,7 @@ class TestPublishIntegration:
         result = _create_fake_pipeline_result("dashboard", img_path)
         config = PublishingConfig(ci_skip_tag="[skip ci]")
 
-        pub_result = asyncio.get_event_loop().run_until_complete(
+        pub_result = asyncio.run(
             publish(
                 repo_dir=repo,
                 pipeline_results=[result],
@@ -129,7 +129,7 @@ class TestPublishIntegration:
             commit_author=CommitAuthor(name="Custom Bot", email="custom@bot.io"),
         )
 
-        asyncio.get_event_loop().run_until_complete(publish(repo, [result], config, "test"))
+        asyncio.run(publish(repo, [result], config, "test"))
 
         author = subprocess.run(
             ["git", "log", "-1", "--format=%an <%ae>"],
@@ -161,9 +161,7 @@ class TestPublishIntegration:
             text=True,
         )
 
-        pub_result = asyncio.get_event_loop().run_until_complete(
-            publish(repo, [result], config, "test", dry_run=True)
-        )
+        pub_result = asyncio.run(publish(repo, [result], config, "test", dry_run=True))
 
         assert not pub_result.committed
 
@@ -190,9 +188,7 @@ class TestPublishIntegration:
         )
         config = PublishingConfig()
 
-        pub_result = asyncio.get_event_loop().run_until_complete(
-            publish(repo, [result], config, "test")
-        )
+        pub_result = asyncio.run(publish(repo, [result], config, "test"))
         assert not pub_result.committed
 
     @pytest.mark.integration
@@ -207,12 +203,12 @@ class TestPublishIntegration:
         (screenshots / "active.png").write_text("active")
         (screenshots / "stale.png").write_text("stale")
 
-        stale = asyncio.get_event_loop().run_until_complete(
+        stale = asyncio.run(
             find_stale_screenshots(repo, "docs/screenshots", {"docs/screenshots/active.png"})
         )
         assert "docs/screenshots/stale.png" in stale
 
-        removed = asyncio.get_event_loop().run_until_complete(remove_stale_files(repo, stale))
+        removed = asyncio.run(remove_stale_files(repo, stale))
         assert removed == 1
         assert not (screenshots / "stale.png").exists()
         assert (screenshots / "active.png").exists()
@@ -258,7 +254,7 @@ class TestReadmePublishIntegration:
         img_result = _create_fake_pipeline_result("dashboard", screenshots / "dashboard.png")
         config = PublishingConfig()
 
-        pub_result = asyncio.get_event_loop().run_until_complete(
+        pub_result = asyncio.run(
             publish(
                 repo,
                 [img_result],
@@ -308,7 +304,7 @@ class TestSquashPublish:
         result = _create_fake_pipeline_result("hero", img_path)
         config = PublishingConfig(strategy="squash", ci_skip_tag="[skip ci]")
 
-        pub_result = asyncio.get_event_loop().run_until_complete(
+        pub_result = asyncio.run(
             publish_squash(
                 repo_dir=repo,
                 pipeline_results=[result],
@@ -372,9 +368,7 @@ class TestSquashPublish:
         )
         config = PublishingConfig(strategy="squash")
 
-        pub_result = asyncio.get_event_loop().run_until_complete(
-            publish_squash(repo, [result], config, "test")
-        )
+        pub_result = asyncio.run(publish_squash(repo, [result], config, "test"))
         assert not pub_result.committed
 
     @pytest.mark.integration
@@ -392,9 +386,7 @@ class TestSquashPublish:
         result = _create_fake_pipeline_result("test", img_path)
         config = PublishingConfig(strategy="squash")
 
-        pub_result = asyncio.get_event_loop().run_until_complete(
-            publish(repo, [result], config, "test")
-        )
+        pub_result = asyncio.run(publish(repo, [result], config, "test"))
         assert pub_result.committed
 
         # Verify no side branch remains

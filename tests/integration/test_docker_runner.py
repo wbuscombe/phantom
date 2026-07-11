@@ -106,9 +106,7 @@ class TestDockerRunnerCaptures:
     @pytest.mark.integration
     def test_capture_homepage(self, runner_ctx: RunnerContext) -> None:
         """Capture the homepage served by nginx in Docker."""
-        result = asyncio.get_event_loop().run_until_complete(
-            _full_lifecycle_capture(runner_ctx, "homepage")
-        )
+        result = asyncio.run(_full_lifecycle_capture(runner_ctx, "homepage"))
         assert result.success, f"Capture failed: {result.error}"
         assert result.output_path is not None
         assert result.output_path.exists()
@@ -118,9 +116,7 @@ class TestDockerRunnerCaptures:
     @pytest.mark.integration
     def test_capture_mobile_viewport(self, runner_ctx: RunnerContext) -> None:
         """Capture homepage at mobile viewport dimensions."""
-        result = asyncio.get_event_loop().run_until_complete(
-            _full_lifecycle_capture(runner_ctx, "mobile-homepage")
-        )
+        result = asyncio.run(_full_lifecycle_capture(runner_ctx, "mobile-homepage"))
         assert result.success, f"Capture failed: {result.error}"
         assert result.output_path is not None
         assert result.output_path.exists()
@@ -135,7 +131,7 @@ class TestDockerRunnerCaptures:
     @pytest.mark.integration
     def test_run_all_captures(self, runner_ctx: RunnerContext) -> None:
         """Run all captures and verify results."""
-        results = asyncio.get_event_loop().run_until_complete(_full_lifecycle_all(runner_ctx))
+        results = asyncio.run(_full_lifecycle_all(runner_ctx))
         assert len(results) == 2
         succeeded = [r for r in results if r.success]
         assert len(succeeded) == 2, (
@@ -166,4 +162,4 @@ class TestDockerRunnerCaptures:
                 f"Expected no running containers but found: {result.stdout.strip()}"
             )
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
