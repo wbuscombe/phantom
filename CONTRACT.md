@@ -63,6 +63,10 @@ When it observes `PHANTOM_MODE=1`, a conformant consumer app **must**:
    plus any host explicitly declared in the manifest's `ready_check` /
    `fixtures`. Mock or stub everything else. Phantom's own probes only ever
    contact hosts in this allowlist (`phantom.contract.manifest_allowlist()`).
+   *Zero outbound trivially satisfies this:* a consumer that makes **no** external
+   calls at all is compliant by definition — the allowlist is a ceiling, not a floor.
+   (The Network Monitor pilot, contract 1.0.0's first consumer, does exactly this under
+   `PHANTOM_MODE=1`.)
 4. **Reach a healthy state unaided** within the declared timeout (see
    [§3](#3-health-contract)) — no manual step, no interactive prompt.
 5. **For `docker-compose` consumers:** propagate `PHANTOM_MODE` into the app
