@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+- CONTRACT.md §1: clarify that a consumer making **zero** outbound network calls trivially
+  satisfies the allowlist (it is a ceiling, not a requirement) — usability note from the
+  Network Monitor pilot. Additive clarification, **no contract-version change**.
+- CI: bump all workflow action pins (checkout/setup-python/upload-artifact/download-artifact/
+  cache) to current Node-24 releases (were Node-20-deprecated); `ci.yml`'s unpinned `@v4`/`@v5`
+  now SHA-pinned too.
+
 ## [0.4.0] - 2026-07-11
 
 This release freezes the **Phantom Consumer Contract at `contract-version: 1.0.0`**
