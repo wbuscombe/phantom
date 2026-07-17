@@ -641,14 +641,14 @@ Phantom reads these environment variables at runtime. Both are required when run
 **Single repository:**
 
 ```bash
-export PHANTOM_WEBHOOK_SECRET="whsec_abc123def456"
+export PHANTOM_WEBHOOK_SECRET="whsec_example_not_a_real_secret"
 export PHANTOM_MANIFEST_MAP="my-app=/srv/phantom/manifests/my-app.yml"
 ```
 
 **Multiple repositories:**
 
 ```bash
-export PHANTOM_WEBHOOK_SECRET="whsec_abc123def456"
+export PHANTOM_WEBHOOK_SECRET="whsec_example_not_a_real_secret"
 export PHANTOM_MANIFEST_MAP="my-app=/srv/phantom/manifests/my-app.yml,docs-site=/srv/phantom/manifests/docs-site.yml,admin-panel=/srv/phantom/manifests/admin.yml"
 ```
 

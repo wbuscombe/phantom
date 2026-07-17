@@ -70,7 +70,8 @@ The orchestration layer that coordinates a capture run.
 - **Fixtures** — Executes pre-capture setup (scripts, HTTP calls, file copies).
 - **Queue** — Async job queue with configurable concurrency and deduplication.
 - **Scheduler** — Cron-based scheduling via croniter for time-triggered runs.
-- **Webhook Listener** — aiohttp server handling GitHub push/release webhooks with HMAC verification.
+- **Webhook Listener** — aiohttp server handling GitHub push/release webhooks with HMAC verification (`triggers.py`).
+- **Snapshots** — Captures and restores screenshot sets so `phantom snapshots` / `phantom rollback` can revert to a previous good state.
 
 ### Runners (`runners/`)
 
@@ -81,7 +82,7 @@ Pluggable execution backends implementing the `BaseRunner` ABC:
 - **`capture(ctx, capture_def)`** — Execute actions and take a screenshot
 - **`teardown(ctx)`** — Stop the application and clean up
 
-The runner registry (`runners/__init__.py`) maps type names to classes. Built-in runners are registered at import time; external plugins use the `phantom.runners` entry-point group.
+The runner registry (`runners/__init__.py`) maps type names to classes. Built-in runners cover `web` (Playwright), `tui` (pyte + silicon), `desktop` (Xvfb + xdotool, for native GUI apps), and `docker-compose`; they are registered at import time, while external plugins use the `phantom.runners` entry-point group.
 
 ### Darkroom (`darkroom/`)
 
@@ -100,6 +101,33 @@ Image processing pipeline with stages:
 ### Models (`models.py`)
 
 Pydantic v2 models for the complete `.phantom.yml` schema. Discriminated union for action types, model validators for cross-field constraints, and a `resolve_captures()` method that merges per-capture overrides with defaults.
+
+### Analyst (`analyst/`) — optional AI subsystem
+
+The AI Analyst reads a project and produces a capture plan, then documents the results —
+powering `phantom analyze` and the `--ai-*` flags. It is an optional extra
+(`pip install 'phantom-docs[ai]'`) and the only component that makes outbound network calls.
+
+- **Analyzer / FileSelector** — Selects the most informative source files within a token
+  budget and prompts Claude to produce an `AnalysisPlan`.
+- **Providers** — Thin Anthropic client wrapper (`ANTHROPIC_API_KEY`, `PHANTOM_LLM_MODEL`).
+- **Documenter** — Uses a vision model to place screenshots into the README.
+- **Costs** — Enforces a per-run USD budget (`--max-cost`) and records spend for `phantom costs`.
+- **Reviewer / Quality / Diff** — Optional screenshot quality review, and an incremental
+  `phantom diff` that reports what changed since the last analysis with no API calls.
+
+### Contract (`contract.py`)
+
+The machine-checkable source of truth for the frozen consumer contract
+(`CONTRACT.md`, `contract-version 1.0.0`): `CONTRACT_VERSION`, `PHANTOM_MODE` semantics,
+the loopback network allowlist, and default artifact/timeout constants. Exposed as
+`phantom.__contract_version__` and enforced by `tests/contract/`.
+
+### Utilities (`utils/`) & Exceptions (`exceptions.py`)
+
+`utils/process.py` provides async subprocess helpers; `utils/logging.py` configures
+structlog with secret redaction. `exceptions.py` defines the exception hierarchy raised
+across the pipeline (e.g. `WebhookSignatureError`, analyst and runner errors).
 
 ## Orchestrator State Machine
 

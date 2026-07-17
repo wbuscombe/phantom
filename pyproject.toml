@@ -20,10 +20,13 @@ keywords = [
     "ci-cd",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Documentation",
@@ -62,6 +65,7 @@ dev = [
 Homepage = "https://github.com/wbuscombe/phantom"
 Repository = "https://github.com/wbuscombe/phantom"
 Documentation = "https://github.com/wbuscombe/phantom#readme"
+Changelog = "https://github.com/wbuscombe/phantom/blob/main/CHANGELOG.md"
 Issues = "https://github.com/wbuscombe/phantom/issues"
 
 [project.scripts]
@@ -82,12 +86,7 @@ markers = [
     "e2e: end-to-end tests requiring full pipeline",
 ]
 
-[tool.ruff]
-target-version = "py312"
-line-length = 100
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+# Ruff configuration lives in ruff.toml (single source of truth).
 
 [tool.mypy]
 python_version = "3.12"
@@ -95,3 +94,4 @@ warn_unused_ignores = false
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+ignore_missing_imports = true

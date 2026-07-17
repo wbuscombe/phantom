@@ -19,54 +19,54 @@ if TYPE_CHECKING:
 # ── Realistic test data ──
 
 _REALISTIC_README = """\
-# YouTube Playlist Manager
+# Media Library Tool
 
-> CLI and TUI tool for managing YouTube playlists and tracking channel uploads.
+> CLI and TUI tool for managing a local media library and tracking new items.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/user/ytpm.git
-cd ytpm
+git clone https://github.com/example/media-library.git
+cd media-library
 pip install -e .
-yt playlists
+ml list
 ```
 
 ## Commands
 
-### Playlist Operations
+### Library Operations
 
-- List playlists: `yt playlists`
-- Analyze channels: `yt playlist "Name" channels`
+- List items: `ml list`
+- Analyze sources: `ml source "Name" items`
 
 ### Search & Duplicates
 
-- Find duplicates: `yt duplicates`
-- Search: `yt search "keyword"`
+- Find duplicates: `ml duplicates`
+- Search: `ml search "keyword"`
 
 ## TUI (Terminal User Interface)
 
-Launch with `yt-tui`.
+Launch with `ml-tui`.
 
-**Playlist Browser:**
+**Collection Browser:**
 
-Browse and manage your YouTube playlists.
+Browse and manage your collections.
 
 **Inbox Triage (60/40 split):**
 
-Process new videos from tracked channels.
+Process new items from tracked sources.
 
-**Add to Playlist Dialog:**
+**Add to Collection Dialog:**
 
-Multi-select dialog for sorting videos.
+Multi-select dialog for sorting items.
 
-**Channel Manager:**
+**Source Manager:**
 
-Track YouTube channels.
+Track your sources.
 
 **Search:**
 
-Find videos across all playlists.
+Find items across your whole library.
 
 ## Contributing
 
@@ -79,8 +79,8 @@ MIT
 
 _REALISTIC_PLAN_JSON = {
     "project_type": "tui",
-    "project_name": "YouTube Playlist Manager",
-    "project_description": "CLI and TUI for YouTube playlists",
+    "project_name": "Media Library Tool",
+    "project_description": "CLI and TUI for a media library",
     "tech_stack": ["python", "textual", "click"],
     "features": [],
     "captures": [
@@ -88,23 +88,23 @@ _REALISTIC_PLAN_JSON = {
             "id": "main-menu",
             "name": "Main Menu",
             "description": "Landing screen with navigation",
-            "alt_text": "YouTube Playlist Manager main menu",
+            "alt_text": "Media Library Tool main menu",
             "importance": 5,
             "navigation_actions": [{"type": "wait", "ms": 2000}],
         },
         {
             "id": "inbox-triage",
             "name": "Inbox Triage",
-            "description": "60/40 split for processing videos",
-            "alt_text": "Inbox triage showing unprocessed videos",
+            "description": "60/40 split for processing items",
+            "alt_text": "Inbox triage showing unprocessed items",
             "importance": 5,
             "navigation_actions": [{"type": "keystroke", "key": "2"}],
         },
         {
             "id": "playlist-detail",
-            "name": "Playlist Detail",
-            "description": "Two-panel playlist browser",
-            "alt_text": "Playlist browser with video list",
+            "name": "Collection Detail",
+            "description": "Two-panel collection browser",
+            "alt_text": "Collection browser with item list",
             "importance": 4,
             "navigation_actions": [{"type": "keystroke", "key": "1"}],
         },
@@ -141,62 +141,62 @@ def _create_fake_png(path: Path, width: int = 2560, height: int = 1600) -> Path:
 
 # The updated README that the mocked Claude API "returns"
 _MOCK_UPDATED_README = """\
-# YouTube Playlist Manager
+# Media Library Tool
 
-> CLI and TUI tool for managing YouTube playlists and tracking channel uploads.
+> CLI and TUI tool for managing a local media library and tracking new items.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/user/ytpm.git
-cd ytpm
+git clone https://github.com/example/media-library.git
+cd media-library
 pip install -e .
-yt playlists
+ml list
 ```
 
 ## Commands
 
-### Playlist Operations
+### Library Operations
 
-- List playlists: `yt playlists`
-- Analyze channels: `yt playlist "Name" channels`
+- List items: `ml list`
+- Analyze sources: `ml source "Name" items`
 
 ### Search & Duplicates
 
-- Find duplicates: `yt duplicates`
-- Search: `yt search "keyword"`
+- Find duplicates: `ml duplicates`
+- Search: `ml search "keyword"`
 
 ## TUI (Terminal User Interface)
 
-Launch with `yt-tui`.
+Launch with `ml-tui`.
 
-<img src="docs/screenshots/main-menu.png" width="1280" alt="YouTube Playlist Manager main menu">
+<img src="docs/screenshots/main-menu.png" width="1280" alt="Media Library Tool main menu">
 
-The main menu provides quick access to all features including playlists, inbox, channels, and search.
+The main menu provides quick access to all features including library, inbox, sources, and search.
 
-**Playlist Browser:**
+**Collection Browser:**
 
-<img src="docs/screenshots/playlist-detail.png" width="1280" alt="Playlist browser with video list">
+<img src="docs/screenshots/playlist-detail.png" width="1280" alt="Collection browser with item list">
 
-Browse and manage your YouTube playlists.
+Browse and manage your collections.
 
 **Inbox Triage (60/40 split):**
 
-<img src="docs/screenshots/inbox-triage.png" width="1280" alt="Inbox triage showing unprocessed videos">
+<img src="docs/screenshots/inbox-triage.png" width="1280" alt="Inbox triage showing unprocessed items">
 
-Process new videos from tracked channels.
+Process new items from tracked sources.
 
-**Add to Playlist Dialog:**
+**Add to Collection Dialog:**
 
-Multi-select dialog for sorting videos.
+Multi-select dialog for sorting items.
 
-**Channel Manager:**
+**Source Manager:**
 
-Track YouTube channels.
+Track your sources.
 
 **Search:**
 
-Find videos across all playlists.
+Find items across your whole library.
 
 ## Contributing
 
@@ -328,7 +328,7 @@ class TestFullDocumentationPipeline:
         assert "## License" in result.updated_content
         # Key content preserved
         assert "pip install -e ." in result.updated_content
-        assert "yt playlists" in result.updated_content
+        assert "ml list" in result.updated_content
         assert "PRs welcome" in result.updated_content
 
     @patch("phantom.analyst.documenter._get_anthropic_client")

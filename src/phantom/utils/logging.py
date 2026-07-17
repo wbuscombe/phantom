@@ -29,13 +29,21 @@ def redact_secrets(
     return event_dict
 
 
-def configure_logging(*, verbose: bool = False, json_output: bool = False) -> None:
+def configure_logging(
+    *, verbose: bool = False, json_output: bool = False, level: str | None = None
+) -> None:
     """Configure structlog for Phantom.
 
     Args:
         verbose: If True, set log level to DEBUG. Otherwise INFO.
         json_output: If True, output JSON lines. Otherwise human-readable.
+        level: Explicit level name (e.g. ``"error"``) that overrides ``verbose``.
+            Used by commands like ``doctor`` that do their own reporting and want
+            to suppress internal dependency-probe warnings.
     """
+    min_level = structlog.processors.NAME_TO_LEVEL[
+        level if level is not None else ("debug" if verbose else "info")
+    ]
     shared_processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
@@ -56,9 +64,7 @@ def configure_logging(*, verbose: bool = False, json_output: bool = False) -> No
             *shared_processors,
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
-        wrapper_class=structlog.make_filtering_bound_logger(
-            structlog.processors.NAME_TO_LEVEL["debug" if verbose else "info"]
-        ),
+        wrapper_class=structlog.make_filtering_bound_logger(min_level),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
@@ -70,9 +76,7 @@ def configure_logging(*, verbose: bool = False, json_output: bool = False) -> No
             *shared_processors,
             renderer,
         ],
-        wrapper_class=structlog.make_filtering_bound_logger(
-            structlog.processors.NAME_TO_LEVEL["debug" if verbose else "info"]
-        ),
+        wrapper_class=structlog.make_filtering_bound_logger(min_level),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,

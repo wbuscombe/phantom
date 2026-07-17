@@ -4,7 +4,7 @@
 >
 > **How to use:** Copy this entire prompt into Claude Code while in your project's root directory.
 >
-> **Requirements:** Python 3.10+, git, GitHub repo with Actions enabled.
+> **Requirements:** Python 3.12+, git, GitHub repo with Actions enabled.
 
 ---
 
@@ -18,14 +18,14 @@ Before touching any project files, verify the environment:
 
 ```bash
 # Check Python
-python3 --version  # Needs 3.10+
+python3 --version  # Needs 3.12+
 
 # Check Phantom is available
 phantom --version 2>/dev/null || {
   # Try the development install
-  PHANTOM="$HOME/Dropbox/workspace/phantom/.venv/bin/phantom"
+  PHANTOM="$HOME/phantom/.venv/bin/phantom"  # adjust to your local Phantom checkout
   $PHANTOM --version 2>/dev/null || {
-    echo "Phantom not found. Install with: pip install 'phantom-docs>=0.3'"
+    echo "Phantom not found. Install with: pip install 'phantom-docs>=0.4,<0.5'"
     exit 1
   }
 }
@@ -324,35 +324,33 @@ phantom: "1"
 project: "{project-name}"
 name: "{Display Name}"
 
-type: web
-
 setup:
-  install: "{pip install -r requirements.txt | npm install}"
-  build: "{npm run build | echo 'no build step'}"
-  run: "{python app.py | npm start}"
-  port: {port}
-  env:
-    PHANTOM_MODE: "1"
-    # Add any other required env vars
-  ready_check:
-    url: "http://localhost:{port}/"
-    strategy: "domcontentloaded"   # NOT networkidle for websocket apps
-    timeout_ms: 15000
+  type: web
+  build:
+    - "{pip install -r requirements.txt | npm install}"
+    - "{npm run build | echo 'no build step'}"
+  run:
+    command: "{python app.py | npm start}"
+    # PHANTOM_MODE=1 is injected automatically (CONTRACT.md §1). Add extra env if needed:
+    # env:
+    #   MY_VAR: "value"
+    ready_check:
+      type: http
+      url: "http://localhost:{port}/"
+      timeout: 15
 
-web:
-  viewport:
-    width: 1440
-    height: 900
+capture_defaults:
+  viewport: { width: 1440, height: 900 }
   device_scale: 2
-  
+
 captures:
   - id: dashboard
     name: "Dashboard"
+    route: "/"
     alt_text: "Main dashboard showing..."
     actions:
-      - navigate: "/"
-      - wait_for: ".dashboard-content"   # Wait for real content, not skeleton
-      - wait: 2000                        # Buffer for charts/animations
+      - { type: wait_for, selector: ".dashboard-content" }   # Wait for real content, not skeleton
+      - { type: wait, ms: 2000 }                             # Buffer for charts/animations
     output: docs/screenshots/dashboard.png
 
 processing:
@@ -361,8 +359,8 @@ processing:
     style: drop-shadow
 
 publishing:
+  branch: main
   strategy: direct
-  commit_message: "docs: update screenshots [phantom]"
 ```
 
 #### TUI App Template
@@ -372,16 +370,15 @@ phantom: "1"
 project: "{project-name}"
 name: "{Display Name}"
 
-type: tui
-
 setup:
-  install: "python3 -m venv .venv && .venv/bin/pip install -e ."
-  run: ".venv/bin/{entry-point}"
-  env:
-    PHANTOM_MODE: "1"
-  ready_check:
-    strategy: delay
-    delay_ms: 3000
+  type: tui
+  build:
+    - "python3 -m venv .venv && .venv/bin/pip install -e ."
+  run:
+    command: ".venv/bin/{entry-point}"
+    ready_check:
+      type: delay
+      seconds: 3
 
 tui:
   terminal:
@@ -393,7 +390,7 @@ tui:
     font: JetBrains Mono
     window_controls: true
     padding: 20
-    round_corner: 8
+    corner_radius: 8
 
 captures:
   - id: main-menu
@@ -415,19 +412,23 @@ phantom: "1"
 project: "{project-name}"
 name: "{Display Name}"
 
-type: desktop
-
 setup:
-  build: "{make | javac *.java | cargo build}"
-  run: "{./build/myapp | java -cp . Main}"
-  env:
-    PHANTOM_MODE: "1"
-    SDL_AUDIODRIVER: "dummy"
-    DISPLAY: ":99"
+  type: desktop
+  build:
+    - "{make | javac *.java | cargo build}"
+  run:
+    command: "{./build/myapp | java -cp . Main}"
+    # PHANTOM_MODE=1 is injected automatically. Xvfb sets DISPLAY. Add app env if needed:
+    # env:
+    #   SDL_AUDIODRIVER: "dummy"
+    ready_check:
+      type: delay
+      seconds: 3
 
 desktop:
-  display: ":99"
-  resolution: "1280x720x24"
+  display:
+    resolution: "1280x720"
+    depth: 24
   window_title: "{Window Title}"
   startup_wait_ms: 3000
 
@@ -436,7 +437,7 @@ captures:
     name: "Main View"
     alt_text: "Application showing..."
     actions:
-      - wait: 2000
+      - { type: wait, ms: 2000 }
     output: docs/screenshots/main-view.png
 
 processing:
@@ -616,7 +617,7 @@ jobs:
           python-version: '3.12'
       
       - name: Install Phantom
-        run: pip install 'phantom-docs>=0.3,<0.4'
+        run: pip install 'phantom-docs>=0.4,<0.5'
       
       - name: Install runner dependencies
         run: |

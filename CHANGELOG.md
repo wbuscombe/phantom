@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `SECURITY.md` — vulnerability-reporting policy and supported-versions table; linked from the README.
+- `.pre-commit-config.yaml` mirroring the CI ruff gate (opt-in via `pre-commit install`); documented in CONTRIBUTING.
+- README: CI status badge, an **AI Analyst** section, a **Security** section, the `desktop`
+  runner, the `analyze` / `diff` / `costs` / `snapshots` / `rollback` commands, the
+  `--ai-*` / `--review` run flags, and the `ANTHROPIC_API_KEY` variable — all previously
+  shipped but undocumented.
+- ARCHITECTURE.md: the AI Analyst subsystem, `contract.py`, snapshots, utilities, and the exception hierarchy.
+- `docs/SECURITY-PRACTICES.md`: a "Product Security Model" section (webhook HMAC, network posture, secret redaction).
+- pyproject `[project.urls]` `Changelog` link and `Programming Language :: Python :: 3` /
+  `:: 3 :: Only` / `Operating System :: OS Independent` classifiers.
+
+### Changed
+- `Development Status` classifier `3 - Alpha` → `4 - Beta`.
+- `phantom doctor` no longer prints internal dependency-probe log lines above its results
+  table (added an optional `level` override to `configure_logging`; use `-v` for detail).
+- Consolidated the ruff configuration into `ruff.toml` (removed the duplicate, unused block
+  from `pyproject.toml`); `mypy` config now sets `ignore_missing_imports` so local runs match CI.
+- Genericized example / fixture project names and local paths in docs and tests.
+
+### Fixed
+- Onboarding and collaborator docs now state `Python 3.12+` (matching `requires-python`)
+  and pin `phantom-docs>=0.4,<0.5` (the previous `>=0.3,<0.4` excluded the shipped 0.4.0).
+- Corrected the Stage-3 manifest templates in `docs/onboarding-prompt.md` (web / TUI /
+  desktop) — all three now pass `phantom validate`. They previously used an outdated schema
+  (top-level `type`, `setup.install`, string `run`, `ready_check.strategy`/`timeout_ms`,
+  top-level `web:` block, implicit-key actions) that the tool rejects.
+
+### Removed
+- An unreferenced sample screenshot binary (`Sample Generated Media/`).
+
 ### Documentation
 - CONTRACT.md §1: clarify that a consumer making **zero** outbound network calls trivially
   satisfies the allowlist (it is a ceiling, not a requirement) — usability note from the

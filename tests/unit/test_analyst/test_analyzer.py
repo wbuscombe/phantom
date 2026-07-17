@@ -17,11 +17,11 @@ from phantom.analyst.providers import LLMResponse
 if TYPE_CHECKING:
     from pathlib import Path
 
-# A realistic mock response that Claude would return for the ytpm project
+# A realistic mock response that Claude would return for a sample TUI project
 _MOCK_PLAN_JSON = {
     "project_type": "tui",
-    "project_name": "YouTube Playlist Manager",
-    "project_description": "CLI and TUI tool for managing YouTube playlists and tracking channel uploads",
+    "project_name": "Media Library Tool",
+    "project_description": "CLI and TUI tool for managing a local media library and tracking new items",
     "tech_stack": ["python", "textual", "click", "sqlite"],
     "features": [
         {
@@ -51,7 +51,7 @@ _MOCK_PLAN_JSON = {
             "id": "main-menu",
             "name": "Main Menu",
             "description": "The app's landing screen",
-            "alt_text": "YouTube Playlist Manager main menu with Playlists, Inbox, Channels, and Search",
+            "alt_text": "Media Library Tool main menu with Library, Inbox, Sources, and Search",
             "importance": 5,
             "navigation_actions": [{"type": "wait", "ms": 2000}],
             "terminal_dimensions": {"width": 140, "height": 36},
@@ -406,19 +406,19 @@ class TestDisplayNameExtraction:
 
     def test_extracts_readme_h1(self, tmp_path: Path) -> None:
         """Prefer README H1 as display name."""
-        (tmp_path / "README.md").write_text("# YouTube Playlist Manager\n\nSome description.")
-        result = ProjectAnalyzer._extract_display_name("youtube-playlist-manager", tmp_path)
-        assert result == "YouTube Playlist Manager"
+        (tmp_path / "README.md").write_text("# CLI Dashboard\n\nSome description.")
+        result = ProjectAnalyzer._extract_display_name("cli-dashboard", tmp_path)
+        assert result == "CLI Dashboard"
 
     def test_converts_kebab_case(self, tmp_path: Path) -> None:
         """Convert kebab-case to Title Case when no README exists."""
-        result = ProjectAnalyzer._extract_display_name("youtube-playlist-manager", tmp_path)
-        assert result == "Youtube Playlist Manager"
+        result = ProjectAnalyzer._extract_display_name("cli-dashboard", tmp_path)
+        assert result == "Cli Dashboard"
 
     def test_converts_snake_case(self, tmp_path: Path) -> None:
         """Convert snake_case to Title Case when no README exists."""
-        result = ProjectAnalyzer._extract_display_name("youtube_playlist_manager", tmp_path)
-        assert result == "Youtube Playlist Manager"
+        result = ProjectAnalyzer._extract_display_name("cli_dashboard", tmp_path)
+        assert result == "Cli Dashboard"
 
     def test_preserves_proper_name(self, tmp_path: Path) -> None:
         """Already proper name is returned as-is."""

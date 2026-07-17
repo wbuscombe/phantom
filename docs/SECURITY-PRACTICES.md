@@ -67,3 +67,28 @@ If a credential is exposed:
 2. **Check access logs** for unauthorized use.
 3. **Update all references** (`.env`, config files, CI/CD, any scripts).
 4. **If the credential was committed to git**, it is permanently compromised regardless of history rewrites. Rotate and move on.
+
+---
+
+## Product Security Model
+
+Beyond contributor hygiene, Phantom itself is built to be safe to run in CI and as a
+long-lived service:
+
+- **Webhook authentication.** `phantom serve` verifies every inbound GitHub webhook with
+  an HMAC-SHA256 signature over the raw request body (`X-Hub-Signature-256`), compared in
+  constant time against `PHANTOM_WEBHOOK_SECRET`. Requests with a missing or invalid
+  signature are rejected before any work is scheduled
+  (`src/phantom/conductor/triggers.py`).
+- **Zero-outbound network posture.** Under the frozen consumer contract
+  (`CONTRACT.md` §1/§3), a captured app is only ever contacted on the loopback allowlist
+  (`localhost`, `127.0.0.1`, `::1`, …) plus the exact hosts a manifest declares in its
+  `ready_check`/`fixtures` (`src/phantom/contract.py`). Phantom makes no other outbound
+  calls. The optional AI Analyst is the only network egress; it is opt-in (`[ai]` extra +
+  `ANTHROPIC_API_KEY`) and cost-capped.
+- **No secrets in artifacts or logs.** Structured logging redacts known token shapes
+  (GitHub PATs, `sk-` keys, bearer tokens, AWS keys) before output
+  (`src/phantom/utils/logging.py`), and screenshots are captured in `PHANTOM_MODE=1`
+  demo mode with bundled data, not live credentials.
+
+To report a vulnerability, see [`SECURITY.md`](../SECURITY.md).
