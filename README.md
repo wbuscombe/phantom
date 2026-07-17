@@ -5,6 +5,7 @@
 [![PyPI](https://img.shields.io/pypi/v/phantom-docs)](https://pypi.org/project/phantom-docs/)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![CI](https://github.com/wbuscombe/phantom/actions/workflows/ci.yml/badge.svg)](https://github.com/wbuscombe/phantom/actions/workflows/ci.yml)
 
 ---
 
@@ -118,6 +119,8 @@ Phantom guarantees `PHANTOM_MODE=1` in your app's environment on every capture,
 across all runners. Conformance is machine-checked in
 [`tests/contract/`](tests/contract/); the CI smoke job that consumes the
 contract is specified in [`docs/smoke-job-spec.md`](docs/smoke-job-spec.md).
+Phantom ships with **600+ tests** across unit, integration, and
+contract-conformance suites.
 
 ## Runners
 
@@ -127,6 +130,7 @@ Phantom supports multiple runner types for different kinds of applications:
 |--------|------|----------|-----------|
 | **Web** | `web` | Browser-based apps | Playwright, Node |
 | **TUI** | `tui` | Terminal applications | pyte, silicon |
+| **Desktop** | `desktop` | Native GUI apps (SDL2, Qt, Swing, Electron) | Xvfb, xdotool, ImageMagick |
 | **Docker Compose** | `docker-compose` | Containerized apps | Docker |
 
 Runners are pluggable — see [Writing Runner Plugins](docs/writing-runners.md) for the extension API.
@@ -178,8 +182,13 @@ See [docs/manifest-reference.md](docs/manifest-reference.md) for the complete fi
 | `phantom run -p <path>` | Run the capture pipeline |
 | `phantom validate <manifest>` | Validate a manifest file |
 | `phantom init` | Scaffold a new `.phantom.yml` |
+| `phantom analyze -p <path>` | Generate a manifest from your code via the AI Analyst |
 | `phantom doctor` | Check system dependencies |
 | `phantom status` | Show run history |
+| `phantom snapshots` | List recent screenshot snapshots |
+| `phantom rollback` | Roll screenshots back to a previous snapshot |
+| `phantom diff` | Show what changed since the last AI analysis (no API calls) |
+| `phantom costs` | Show AI Analyst cost summary |
 | `phantom serve` | Start webhook listener + scheduler |
 | `phantom gc` | Clean up stale workspaces |
 
@@ -193,7 +202,33 @@ See [docs/manifest-reference.md](docs/manifest-reference.md) for the complete fi
 | `--skip-publish` | Capture and process, skip git |
 | `--force` | Commit even if below diff threshold |
 | `--if-changed` | Skip if repo HEAD unchanged |
+| `--ai-analyst` | Generate the manifest via AI instead of reading `.phantom.yml` |
+| `--ai-document` | Use AI to update the README with screenshots after capture |
+| `--ai-auto` | Full autonomous pipeline: AI analyze + capture + document |
+| `--review` | Send screenshots to a vision model for quality review |
 | `--verbose` / `-v` | Enable debug logging |
+
+## AI Analyst (optional)
+
+Phantom can read your codebase and generate a capture plan for you — no hand-written
+manifest required. Install the optional extra and set an Anthropic API key:
+
+```bash
+pip install 'phantom-docs[ai]'
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+```bash
+# Generate a .phantom.yml from your project
+phantom analyze -p . --max-cost 0.50
+
+# Or run the whole pipeline autonomously: analyze + capture + update README
+phantom run -p . --ai-auto
+```
+
+Every AI run is cost-capped (`--max-cost`, default `$0.50`) and tracked — use
+`phantom costs` for a running total and `phantom diff` to preview what changed
+before spending anything.
 
 ## How It Works
 
@@ -231,6 +266,7 @@ See [docs/manifest-reference.md](docs/manifest-reference.md) for the complete fi
 | `PHANTOM_MODE` | Set to `1` in your app's environment by Phantom on every capture; your app switches to deterministic demo mode. See [`CONTRACT.md`](CONTRACT.md). |
 | `PHANTOM_WEBHOOK_SECRET` | HMAC secret for webhook verification |
 | `PHANTOM_MANIFEST_MAP` | Repo-to-manifest mapping for `serve` mode |
+| `ANTHROPIC_API_KEY` | API key for the optional AI Analyst (`analyze`, `--ai-*`). See [AI Analyst](#ai-analyst-optional). |
 
 ### README Sentinels
 
@@ -242,6 +278,13 @@ Add markers to your README for automatic image updates:
 ```
 
 Phantom will inject the `<img>` tag between these markers when a capture with `readme_target: hero` changes.
+
+## Security
+
+Phantom's product security model — webhook HMAC verification and the zero-outbound
+network posture — is documented in
+**[`docs/SECURITY-PRACTICES.md`](docs/SECURITY-PRACTICES.md)**. To report a
+vulnerability, see **[`SECURITY.md`](SECURITY.md)**.
 
 ## Contributing
 

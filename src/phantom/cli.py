@@ -1057,6 +1057,9 @@ def doctor(verbose: bool) -> None:
     """Check system dependencies for all runner types."""
     from phantom.conductor.requirements import check_all_dependencies
     from phantom.runners import available_runners
+    from phantom.utils.logging import configure_logging
+
+    configure_logging(verbose=verbose, level=None if verbose else "error")
 
     output.print(f"[bold]Phantom v{__version__}[/bold] — doctor")
     output.print()

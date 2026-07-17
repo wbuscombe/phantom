@@ -1,0 +1,18 @@
+# Optional local hooks. Run `pre-commit install` once and they run on every commit.
+# These mirror the ruff gate enforced in CI (.github/workflows/ci.yml); mypy stays
+# CI-only. A commit that passes these will pass CI lint.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict

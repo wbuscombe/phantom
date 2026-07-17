@@ -61,6 +61,16 @@ ruff format src/ tests/
 mypy src/phantom/ --ignore-missing-imports
 ```
 
+### Pre-commit hooks (optional)
+
+The repo ships a [`.pre-commit-config.yaml`](.pre-commit-config.yaml) that mirrors the CI
+ruff gate. Enable it once and it runs on every commit:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
 ## Code Style
 
 - Python 3.12+ features are encouraged (`match`, `type` aliases, `|` unions)

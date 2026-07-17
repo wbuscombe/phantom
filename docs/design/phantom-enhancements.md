@@ -70,7 +70,7 @@ Replace file-based lock paragraph with:
 {
   "queue": [
     {
-      "project": "deckcast",
+      "project": "example-app",
       "ref": "v2.1.0",
       "trigger": "release",
       "queued_at": "2026-02-12T03:00:00Z"
@@ -605,18 +605,18 @@ Generates a minimal but valid `.phantom.yml` with TODO markers for fields that n
 ### Add `phantom run` flags:
 
 ```bash
-phantom run --project deckcast                    # Full run (existing)
-phantom run --project deckcast --dry-run           # NEW: Build, launch, capture — but don't commit
-phantom run --project deckcast --capture dashboard # NEW: Run single capture only
-phantom run --project deckcast --group hero-shots  # NEW: Run capture group
-phantom run --project deckcast --skip-publish      # NEW: Capture + process, skip git
-phantom run --project deckcast --force             # NEW: Commit even if below diff threshold
+phantom run --project example-app                    # Full run (existing)
+phantom run --project example-app --dry-run           # NEW: Build, launch, capture — but don't commit
+phantom run --project example-app --capture dashboard # NEW: Run single capture only
+phantom run --project example-app --group hero-shots  # NEW: Run capture group
+phantom run --project example-app --skip-publish      # NEW: Capture + process, skip git
+phantom run --project example-app --force             # NEW: Commit even if below diff threshold
 ```
 
 ### Add `phantom diff`:
 
 ```bash
-$ phantom diff deckcast
+$ phantom diff example-app
 Comparing against last published screenshots...
   dashboard:       12.3% changed (above 5% threshold — would update)
   casting-active:  0.8% changed (below threshold — would skip)

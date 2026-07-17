@@ -335,25 +335,26 @@ test-web-app/
 
 ---
 
-## DeckCast — First Real Target
+## First Real Target
 
-After the test-web-app validates the pipeline, DeckCast is the first real project to onboard. This requires:
+After the test-web-app validates the pipeline, the first real project to onboard is a
+representative dashboard app (`example-app`). This requires:
 
-1. **Demo mode support in DeckCast** — `PHANTOM_MODE=1` environment variable that:
-   - Bypasses Apple TV discovery (mocks device list)
+1. **Demo mode support in the app** — `PHANTOM_MODE=1` environment variable that:
+   - Bypasses external device/service discovery (mocks the list)
    - Seeds the UI with realistic demo data
-   - Disables any real network calls to X/Twitter API
+   - Disables any real network calls to third-party APIs
 
-2. **Seed script** — `scripts/seed-demo.js` that populates DeckCast with:
-   - 3 demo Apple TV devices (Living Room, Office, Bedroom)
-   - 2 active casting sessions with sample X Pro columns
-   - Realistic usernames, profile pictures, and tweet content
+2. **Seed script** — `scripts/seed-demo.js` that populates the app with:
+   - 3 demo devices (Living Room, Office, Bedroom)
+   - 2 active sessions with sample content columns
+   - Realistic usernames, avatars, and post content
 
 3. **`.phantom.yml`** — Manifest targeting 4-5 hero captures:
    - Dashboard (populated, dark mode)
-   - Active casting session
+   - Active session
    - Device setup flow
    - Mobile admin view
    - Settings panel
 
-This work happens in the DeckCast repo, not in Phantom. It validates that the Demo Readiness Standard (section 11) is achievable for a real project.
+This work happens in the target app's repo, not in Phantom. It validates that the Demo Readiness Standard (section 11) is achievable for a real project.

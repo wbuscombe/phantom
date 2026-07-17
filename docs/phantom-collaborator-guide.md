@@ -4,7 +4,7 @@ Phantom is an automated screenshot documentation tool. It launches your app, tak
 
 ## Prerequisites
 
-- **Python 3.10+**
+- **Python 3.12+**
 - **Git repo on GitHub** (Phantom commits screenshots back to your repo)
 - **Claude Code** (Anthropic's CLI tool — this runs the onboarding)
 - **Anthropic API key** (for the AI Analyst that reads your code and generates a capture plan)
@@ -18,7 +18,7 @@ Supported frameworks: SDL2, Java Swing/JavaFX, Qt, GTK, Electron, or anything th
 ## Step 1: Install Phantom
 
 ```bash
-pip install 'phantom-docs>=0.3,<0.4'
+pip install 'phantom-docs>=0.4,<0.5'
 ```
 
 Verify:
@@ -64,7 +64,7 @@ The Phantom CLI is available as: phantom
 If you don't have the Phantom repo cloned locally, you can just tell Claude Code:
 
 ```
-Install phantom-docs (pip install 'phantom-docs>=0.3,<0.4'), then onboard this 
+Install phantom-docs (pip install 'phantom-docs>=0.4,<0.5'), then onboard this 
 desktop app project to Phantom. 
 
 This is a [SDL2 / Java Swing / Qt / Electron / etc.] application.
