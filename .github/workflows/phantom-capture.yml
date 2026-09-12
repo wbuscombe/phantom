@@ -8,7 +8,14 @@ on:
         required: true
         type: string
       phantom-version:
-        description: "Phantom PyPI version constraint (e.g. '>=0.4,<0.5') or git ref (e.g. main)"
+        description: >-
+          Phantom version to install. One of: a PyPI version constraint on release
+          numbers, using ==, !=, ~=, <=, >=, < or >, comma-separated, no spaces, with
+          '.*' only after == or != (e.g. '>=0.4,<0.5', '==0.4.*'); an exact version
+          N.N.N, installed as ==N.N.N (e.g. '0.2.0'); or a git ref made of A-Z a-z 0-9
+          . _ / - with no leading '-', no leading, trailing or repeated '/', and no
+          '..' (e.g. 'main', 'feature/x'). Any other value, including an empty one,
+          fails the step before anything is installed.
         required: false
         default: ">=0.4,<0.5"
         type: string
