@@ -38,6 +38,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - An unreferenced sample screenshot binary (`Sample Generated Media/`).
 
+### Security
+- **The reusable workflow no longer interpolates `phantom-version` into a shell script.**
+  `phantom-capture.yml`'s *Install Phantom* step substituted the caller's input directly
+  into the script text, so any repository calling the workflow could run arbitrary commands
+  on the runner with the job's `contents: write` / `pull-requests: write` token and any
+  secret passed to it. The value (and the `ai-*` flags used by the same step) now reaches
+  the shell only through a step-level `env:` mapping, and is validated before any install
+  target is built: a PyPI version constraint on release numbers (e.g. `>=0.4,<0.5`,
+  `==0.4.*`), an exact `N.N.N` version (installed as `==N.N.N`), or a git ref limited to
+  `A-Za-z0-9._/-` with no leading `-`, no leading, trailing or repeated `/`, and no `..`.
+  Every accepted form installs exactly what it installed before. Anything else, including
+  an empty value, now fails the step before `pip` runs; values that used to be passed
+  through but are outside those forms (spaces, prerelease/local/epoch versions, four-part
+  versions, `===`, caller-supplied extras or markers) are rejected. Covered by
+  `tests/unit/test_capture_workflow_install.py`, which executes the step's own script.
+
 ### Documentation
 - CONTRACT.md §1: clarify that a consumer making **zero** outbound network calls trivially
   satisfies the allowlist (it is a ceiling, not a requirement) — usability note from the

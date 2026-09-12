@@ -8,7 +8,14 @@ on:
         required: true
         type: string
       phantom-version:
-        description: "Phantom PyPI version constraint (e.g. '>=0.4,<0.5') or git ref (e.g. main)"
+        description: >-
+          Phantom version to install. One of: a PyPI version constraint on release
+          numbers, using ==, !=, ~=, <=, >=, < or >, comma-separated, no spaces, with
+          '.*' only after == or != (e.g. '>=0.4,<0.5', '==0.4.*'); an exact version
+          N.N.N, installed as ==N.N.N (e.g. '0.2.0'); or a git ref made of A-Z a-z 0-9
+          . _ / - with no leading '-', no leading, trailing or repeated '/', and no
+          '..' (e.g. 'main', 'feature/x'). Any other value, including an empty one,
+          fails the step before anything is installed.
         required: false
         default: ">=0.4,<0.5"
         type: string
@@ -74,22 +81,59 @@ jobs:
           python-version: "3.12"
 
       - name: Install Phantom
+        # Caller inputs reach this script only through env. Interpolating them
+        # into the script text with an expression would let a crafted value run
+        # as shell code on the runner.
+        env:
+          PHANTOM_VERSION: ${{ inputs.phantom-version }}
+          AI_ANALYST: ${{ inputs.ai-analyst }}
+          AI_DOCUMENT: ${{ inputs.ai-document }}
+          AI_AUTO: ${{ inputs.ai-auto }}
         run: |
           AI_EXTRA=""
-          if [[ "${{ inputs.ai-analyst }}" == "true" || "${{ inputs.ai-document }}" == "true" || "${{ inputs.ai-auto }}" == "true" ]]; then
+          if [[ "$AI_ANALYST" == "true" || "$AI_DOCUMENT" == "true" || "$AI_AUTO" == "true" ]]; then
             AI_EXTRA="[ai]"
           fi
-          VERSION="${{ inputs.phantom-version }}"
-          if [[ "$VERSION" == *">"* || "$VERSION" == *"<"* || "$VERSION" == *"="* ]]; then
-            # Version constraint (e.g. >=0.3,<0.4)
-            pip install "phantom-docs${AI_EXTRA}${VERSION}"
-          elif [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            # Exact version (e.g. 0.2.0)
-            pip install "phantom-docs${AI_EXTRA}==${VERSION}"
+          reject() {
+            echo "::error title=Invalid phantom-version::$1 Accepted forms: a version specifier such as '>=0.4,<0.5' or '==0.4.*', an exact version such as '0.2.0', or a git ref such as 'main'. Nothing was installed."
+            exit 1
+          }
+          # Validate phantom-version before any install target is built. The
+          # first rule that applies fixes the category (the same order the
+          # workflow has always used), and a value that fails its category's
+          # full pattern is rejected, never re-routed to another category:
+          #   1. contains <, > or =  -> version specifier, appended as-is
+          #   2. starts with N.N.N   -> exact version, installed as ==N.N.N
+          #   3. anything else       -> git ref
+          # Character sets are spelled out rather than written as ranges so the
+          # match cannot depend on the runner's locale.
+          DIGIT='0123456789'
+          ALNUM="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz${DIGIT}"
+          NUM="[${DIGIT}]+"
+          RELEASE="${NUM}(\.${NUM})*"
+          CLAUSE="((==|!=)${RELEASE}(\.\*)?|~=${NUM}(\.${NUM})+|(<=|>=|<|>)${RELEASE})"
+          SPECIFIER_RE="^${CLAUSE}(,${CLAUSE})*$"
+          EXACT_PREFIX_RE="^${NUM}\.${NUM}\.${NUM}"
+          EXACT_RE="${EXACT_PREFIX_RE}$"
+          REF_RE="^[${ALNUM}._/-]+$"
+          if [[ -z "$PHANTOM_VERSION" ]]; then
+            reject "Value is empty."
+          elif [[ "$PHANTOM_VERSION" == -* ]]; then
+            reject "Value must not start with '-'."
+          elif [[ "$PHANTOM_VERSION" == *">"* || "$PHANTOM_VERSION" == *"<"* || "$PHANTOM_VERSION" == *"="* ]]; then
+            [[ "$PHANTOM_VERSION" =~ $SPECIFIER_RE ]] || reject "Not a valid version specifier."
+            TARGET="phantom-docs${AI_EXTRA}${PHANTOM_VERSION}"
+          elif [[ "$PHANTOM_VERSION" =~ $EXACT_PREFIX_RE ]]; then
+            [[ "$PHANTOM_VERSION" =~ $EXACT_RE ]] || reject "Not a valid exact version (expected N.N.N)."
+            TARGET="phantom-docs${AI_EXTRA}==${PHANTOM_VERSION}"
           else
-            # Git ref (e.g. main, feature-branch)
-            pip install "git+https://github.com/wbuscombe/phantom.git@${VERSION}${AI_EXTRA}"
+            [[ "$PHANTOM_VERSION" =~ $REF_RE ]] || reject "Git ref contains a character outside A-Z a-z 0-9 . _ / -."
+            case "$PHANTOM_VERSION" in
+              /* | */ | *//* | *..*) reject "Git ref must not start or end with '/', repeat '/', or contain '..'." ;;
+            esac
+            TARGET="git+https://github.com/wbuscombe/phantom.git@${PHANTOM_VERSION}${AI_EXTRA}"
           fi
+          pip install "$TARGET"
           phantom --version
 
       # ── Web runner dependencies ──
