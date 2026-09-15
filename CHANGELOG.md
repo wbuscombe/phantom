@@ -65,6 +65,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   double-quoted, so the name reaches `gh` as one literal argument. Ordinary tags create the
   same release as before. Covered by `tests/unit/test_release_workflow_tag.py`, which
   executes the step's own script.
+- **The release workflow's token is now scoped per job.** `release.yml` granted
+  `contents: write` and `id-token: write` at the workflow level, so all three jobs held both,
+  including `build`, which installs tooling from PyPI and runs the freshly built package. The
+  workflow level now grants nothing, and each job requests only what its own steps use:
+  `build` gets `contents: read` (checkout), `publish` gets `id-token: write` (PyPI Trusted
+  Publishing and PEP 740 attestations), and `github-release` gets `contents: write`
+  (`gh release create`). The release path is not exercised by this change; if a release fails
+  on permissions, widen only the grant that failed. Covered by
+  `tests/unit/test_release_workflow_permissions.py`, which reads the workflow file.
 
 ### Documentation
 - CONTRACT.md §1: clarify that a consumer making **zero** outbound network calls trivially
