@@ -57,6 +57,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through but are outside those forms (spaces, prerelease/local/epoch versions, four-part
   versions, `===`, caller-supplied extras or markers) are rejected. Covered by
   `tests/unit/test_capture_workflow_install.py`, which executes the step's own script.
+- **The release workflow no longer interpolates the tag name into a shell script.**
+  `release.yml`'s *Create GitHub Release* step substituted `github.ref_name` directly into
+  the script text. Git permits shell metacharacters in tag names, so a crafted `v*` tag push
+  could run commands on the runner with the job's token (`contents: write`, `id-token: write`).
+  The step now reads the tag from the runner-provided `GITHUB_REF_NAME` environment variable,
+  double-quoted, so the name reaches `gh` as one literal argument. Ordinary tags create the
+  same release as before. Covered by `tests/unit/test_release_workflow_tag.py`, which
+  executes the step's own script.
 
 ### Documentation
 - CONTRACT.md §1: clarify that a consumer making **zero** outbound network calls trivially
