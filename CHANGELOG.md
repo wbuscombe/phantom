@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consolidated the ruff configuration into `ruff.toml` (removed the duplicate, unused block
   from `pyproject.toml`); `mypy` config now sets `ignore_missing_imports` so local runs match CI.
 - Genericized example / fixture project names and local paths in docs and tests.
+- CI: the `test` job now runs the contract-conformance tier (`pytest tests/contract/`) as its
+  own step, so a contract regression fails the build. The tier was previously not run in CI.
+  pytest's no-tests-collected exit status (5) fails the step, so a path that collects nothing
+  cannot pass.
 
 ### Fixed
 - Onboarding and collaborator docs now state `Python 3.12+` (matching `requires-python`)

@@ -40,6 +40,8 @@ jobs:
           sudo apt-get install -y pngquant
       - name: Unit tests
         run: pytest tests/unit/ -v --tb=short
+      - name: Contract tests
+        run: pytest tests/contract/ -v --tb=short
       - name: Integration tests (darkroom + publisher)
         run: pytest tests/integration/ -v --tb=short --ignore=tests/integration/test_web_runner.py
       - name: Integration tests (web runner)
