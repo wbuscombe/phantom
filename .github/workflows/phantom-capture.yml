@@ -233,21 +233,21 @@ jobs:
           # error-severity capture, which fails the job and skips the
           # success-gated commit/push steps below (fail-closed). force-publish
           # passes --force to override the gate for intentionally low-signal frames.
-          FLAGS="--project . --skip-publish --fail-on-quality-error"
+          FLAGS=(--project . --skip-publish --fail-on-quality-error)
           if [[ "${{ inputs.force-publish }}" == "true" ]]; then
-            FLAGS="$FLAGS --force"
+            FLAGS+=(--force)
           fi
           if [[ "${{ inputs.ai-auto }}" == "true" ]]; then
-            FLAGS="$FLAGS --ai-auto"
+            FLAGS+=(--ai-auto)
           else
             if [[ "${{ inputs.ai-analyst }}" == "true" ]]; then
-              FLAGS="$FLAGS --ai-analyst"
+              FLAGS+=(--ai-analyst)
             fi
             if [[ "${{ inputs.ai-document }}" == "true" ]]; then
-              FLAGS="$FLAGS --ai-document"
+              FLAGS+=(--ai-document)
             fi
           fi
-          phantom run $FLAGS
+          phantom run "${FLAGS[@]}"
 
       # ── Upload artifacts (opt-in, success-only) ──
       # Captured frames are committed by the publish steps below; the artifact
