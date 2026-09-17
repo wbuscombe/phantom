@@ -131,7 +131,10 @@ jobs:
             case "$PHANTOM_VERSION" in
               /* | */ | *//* | *..*) reject "Git ref must not start or end with '/', repeat '/', or contain '..'." ;;
             esac
-            TARGET="git+https://github.com/wbuscombe/phantom.git@${PHANTOM_VERSION}${AI_EXTRA}"
+            # PEP 508 direct reference: the extra belongs on the name. pip reads
+            # everything after the URL's last '@' as the revision, so an extra
+            # appended there becomes part of the ref and the install fails.
+            TARGET="phantom-docs${AI_EXTRA} @ git+https://github.com/wbuscombe/phantom.git@${PHANTOM_VERSION}"
           fi
           pip install "$TARGET"
           phantom --version
