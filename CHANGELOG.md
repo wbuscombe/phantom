@@ -38,6 +38,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   desktop) — all three now pass `phantom validate`. They previously used an outdated schema
   (top-level `type`, `setup.install`, string `run`, `ready_check.strategy`/`timeout_ms`,
   top-level `web:` block, implicit-key actions) that the tool rejects.
+- **Installing Phantom from a git ref with an AI feature enabled no longer fails.** When
+  `phantom-version` was a git ref and `ai-analyst`, `ai-document` or `ai-auto` was set,
+  `phantom-capture.yml`'s *Install Phantom* step composed
+  `git+https://github.com/wbuscombe/phantom.git@<ref>[ai]`. pip reads everything after the
+  URL's last `@` as the revision, so it tried to check out a nonexistent ref `<ref>[ai]`,
+  with no extra, and that install could never succeed. Git refs now install as a PEP 508
+  direct reference with the extra on the package name:
+  `phantom-docs[ai] @ git+https://github.com/wbuscombe/phantom.git@<ref>`, or
+  `phantom-docs @ ...` without AI, which installs the same package as before. Input names,
+  accepted `phantom-version` forms and validation are unchanged, and version-specifier and
+  exact-version installs compose byte-identical targets. The Security entry's "every
+  accepted form installs exactly what it installed before" therefore holds except for this
+  form, which never installed. Covered by `tests/unit/test_capture_workflow_install.py`.
 
 ### Removed
 - An unreferenced sample screenshot binary (`Sample Generated Media/`).
