@@ -87,6 +87,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`gh release create`). The release path is not exercised by this change; if a release fails
   on permissions, widen only the grant that failed. Covered by
   `tests/unit/test_release_workflow_permissions.py`, which reads the workflow file.
+- **The pinned `dtolnay/rust-toolchain` action now references a commit that upstream still
+  keeps on a live branch.** `phantom-capture.yml`'s *Setup Rust toolchain (tui)* step pinned a
+  commit that upstream later orphaned by force-pushing the branch it came from. GitHub resolves
+  a commit across a repository's whole fork network, so such a pin keeps resolving and keeps
+  installing long after no branch or tag in the upstream repository contains it. By inspection
+  it is then indistinguishable from a commit that never belonged to the project, and no one
+  upstream is maintaining the code it points at. The pin now tracks the current tip of
+  `stable`, with the ref name and the date it was taken recorded in a comment beside it, so the
+  next refresh is a one-line change. Static analysis reports this class as `impostor-commit`,
+  but only when it can query the upstream refs: an offline run of the same scanner over the
+  same file reports nothing at all. Because this upstream rebases `stable` routinely, the pin
+  is expected to need refreshing again.
 
 ### Documentation
 - CONTRACT.md §1: clarify that a consumer making **zero** outbound network calls trivially
