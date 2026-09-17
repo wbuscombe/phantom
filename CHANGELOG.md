@@ -56,6 +56,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An unreferenced sample screenshot binary (`Sample Generated Media/`).
 
 ### Security
+- **The capture step no longer relies on word splitting to pass its flags.**
+  `phantom-capture.yml`'s *Run captures* step built its flags as a string and invoked
+  `phantom run $FLAGS`, an unquoted expansion (shellcheck SC2086, reported by actionlint at
+  `phantom-capture.yml:250`). The value is composed only of literal flag text (the four
+  `${{ inputs.* }}` expressions in that block are `type: boolean` and only select which
+  literal flags are appended), so the finding is a quoting-correctness issue, not the
+  caller-controlled-value class fixed in the *Install Phantom* and *Create GitHub Release*
+  steps. It is fixed as such: the flags are now a bash array expanded as
+  `"${FLAGS[@]}"`, so no value is ever word-split or glob-expanded. Quoting the string
+  instead (`"$FLAGS"`) would have collapsed every flag into one argument; the argument
+  vector is unchanged for all sixteen input combinations, verified by
+  `tests/unit/test_capture_workflow_flags.py`, which executes the step's own script.
+- **CI and release checkouts no longer persist the job's credential in the git config.**
+  `actions/checkout` writes an authentication header into `.git/config` by default, where
+  any later step, or anything that archives the workspace, can read it (zizmor
+  `artipacked`). The four checkouts whose jobs never use it now set
+  `persist-credentials: false`: both `ci.yml` jobs (lint and test run only ruff, mypy,
+  pip and pytest) and both `release.yml` checkouts (the build job builds and uploads an
+  artifact; the github-release job's `gh release create` authenticates through `GH_TOKEN`).
+  The capture workflow's checkout keeps the credential deliberately: its publish steps run
+  `git push`, which uses exactly that persisted header.
 - **The reusable workflow no longer interpolates `phantom-version` into a shell script.**
   `phantom-capture.yml`'s *Install Phantom* step substituted the caller's input directly
   into the script text, so any repository calling the workflow could run arbitrary commands
