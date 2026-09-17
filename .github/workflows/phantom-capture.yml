@@ -155,7 +155,7 @@ jobs:
       # ── TUI runner dependencies ──
       - name: Setup Rust toolchain (tui)
         if: inputs.project-type == 'tui'
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable (pinned 2026-07-11)
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable (pinned 2026-09-17)
 
       - name: Cache silicon binary (tui)
         if: inputs.project-type == 'tui' && inputs.rust-cache
