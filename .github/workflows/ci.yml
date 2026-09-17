@@ -53,3 +53,45 @@ jobs:
       - name: E2E tests
         run: pytest tests/e2e/ -v --tb=short --ignore-glob='*/__init__.py' || true
         if: hashFiles('tests/e2e/test_*.py') != ''
+
+  workflow-static-analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # actions/checkout: read this repository's workflow files so they can be scanned
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      # Pinned: an unpinned linter changes what this gate means without a commit.
+      # To update, bump the versions on the next line and review the finding delta it produces.
+      - name: Install pinned analysis tooling
+        run: pip install zizmor==1.30.1 actionlint-py==1.7.12.24
+      # With no token, zizmor drops to offline mode, where it cannot query ref provenance
+      # and so cannot see the impostor-commit class at all. It exits 0 in that state, so an
+      # unguarded gate would report a clean, authoritative-looking pass while blind. Fail closed.
+      - name: Require a GitHub token for online scanning
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::No GitHub token available: zizmor would silently scan offline and miss provenance-dependent findings."
+            exit 1
+          fi
+      # Reports every severity. Medium and below stay visible here without failing the build,
+      # so they cannot rot unseen. Still exits non-zero if the scan itself fails.
+      - name: Report all workflow findings
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor --no-exit-codes .github/workflows/
+      # The gate proper: High and above fail the job.
+      - name: Fail on High findings
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor --min-severity high .github/workflows/
+      # No arguments: actionlint discovers every workflow file itself, so a newly added
+      # workflow is in scope automatically.
+      - name: Lint workflow syntax
+        run: actionlint
