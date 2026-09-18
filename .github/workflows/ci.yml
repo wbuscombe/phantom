@@ -6,9 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+permissions: {} # nothing by default; each job requests only what its own steps use
+
 jobs:
   lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # actions/checkout: clone this repository for ruff and mypy
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -27,6 +31,8 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # actions/checkout: clone this repository to install and test it
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
