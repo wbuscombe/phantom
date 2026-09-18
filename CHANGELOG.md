@@ -56,6 +56,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An unreferenced sample screenshot binary (`Sample Generated Media/`).
 
 ### Security
+- **CI jobs now hold only the token permissions their own steps use.** `ci.yml` declared no
+  workflow-level `permissions:` and none on the `lint` or `test` jobs, so those jobs took their
+  token scopes from the repository's default workflow-permissions setting, which lives outside
+  the file and can be widened without a commit (zizmor `excessive-permissions`, Medium, on the
+  workflow and on both jobs). The workflow level now grants nothing, and each job requests what
+  its own steps use: `lint` and `test` get `contents: read` for `actions/checkout`, and
+  `workflow-static-analysis` keeps the `contents: read` it already declared. The only other step
+  given the token is `actions/setup-python`, by default, to fetch Python builds from the public
+  `actions/python-versions` repository, which needs no scope. Checkout does not persist the
+  token, and ruff, mypy, pip, Playwright, apt and pytest never see it. Under the current
+  repository default this removes `packages: read`, which no step used. Unlike the release
+  workflow, this one runs on the pull request that changes it, so that removal is exercised on
+  its own run rather than at some later one. Covered by
+  `tests/unit/test_ci_workflow_permissions.py`, which reads the workflow file: the
+  static-analysis gate does not report a job-level widening such as `contents: write`, so
+  without the test that direction would pass unnoticed.
 - **CI now gates on workflow static analysis.** A `workflow-static-analysis` job runs
   `zizmor` and `actionlint` over every file in `.github/workflows/` on each push and pull
   request. The threshold is deliberate: a finding of High or above fails the build, while
