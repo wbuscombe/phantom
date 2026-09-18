@@ -56,6 +56,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An unreferenced sample screenshot binary (`Sample Generated Media/`).
 
 ### Security
+- **CI now gates on workflow static analysis.** A `workflow-static-analysis` job runs
+  `zizmor` and `actionlint` over every file in `.github/workflows/` on each push and pull
+  request. The threshold is deliberate: a finding of High or above fails the build, while
+  Medium and below are printed in the job log without failing it, so they stay visible
+  rather than rotting unseen and can be closed on their merits later, after which the
+  threshold tightens. Gating Medium today would have required either an unbounded
+  remediation pass inside a gating change or a baseline file, which is suppression under
+  another name; nothing here is suppressed, baselined, ignored, or downgraded. The scan
+  runs online, because zizmor can only report the `impostor-commit` class when it can
+  query upstream refs (see the rust-toolchain entry below). Given no token it falls back
+  to offline mode, reports nothing and exits 0, so the job checks for the token first and
+  fails closed rather than accepting that falsely clean pass. Both tools are pinned
+  (`zizmor==1.30.1`, `actionlint-py==1.7.12.24`) so the gate's meaning cannot change
+  without a commit, and the job requests only `contents: read`. The gate turns a pull
+  request red but does not block a merge until it is marked a required check in branch
+  protection, which is a separate settings change.
 - **The capture step no longer relies on word splitting to pass its flags.**
   `phantom-capture.yml`'s *Run captures* step built its flags as a string and invoked
   `phantom run $FLAGS`, an unquoted expansion (shellcheck SC2086, reported by actionlint at
